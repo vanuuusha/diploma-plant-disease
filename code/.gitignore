@@ -1,0 +1,31 @@
+# Веса моделей
+models/*.pt
+models/*.pth
+models/*.onnx
+models/*.engine
+
+# Датасеты (тяжёлые)
+data/images/
+data/labels/
+data/*.zip
+data/*.tar.gz
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Логи обучения Ultralytics
+runs/
+
+# Jupyter
+.ipynb_checkpoints/
