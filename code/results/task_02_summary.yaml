@@ -1,0 +1,64 @@
+total_tasks: 5501
+total_images_with_annotations: 4443
+skipped_no_image: 1026
+skipped_no_annotation: 32
+num_classes: 9
+split_sizes:
+  train: 3109
+  val: 889
+  test: 445
+classes:
+- id: 0
+  name: Недостаток P2O5
+  train: 3102
+  val: 1047
+  test: 403
+  total_annotations: 4552
+- id: 1
+  name: Листовая (бурая) ржавчина
+  train: 1446
+  val: 422
+  test: 226
+  total_annotations: 2094
+- id: 2
+  name: Мучнистая роса
+  train: 1410
+  val: 394
+  test: 197
+  total_annotations: 2002
+- id: 3
+  name: Пиренофороз
+  train: 1344
+  val: 446
+  test: 194
+  total_annotations: 1984
+- id: 4
+  name: Фузариоз
+  train: 1089
+  val: 398
+  test: 133
+  total_annotations: 1621
+- id: 5
+  name: Корневая гниль
+  train: 714
+  val: 217
+  test: 96
+  total_annotations: 1032
+- id: 6
+  name: Септориоз
+  train: 699
+  val: 189
+  test: 89
+  total_annotations: 977
+- id: 7
+  name: Недостаток N
+  train: 608
+  val: 201
+  test: 66
+  total_annotations: 875
+- id: 8
+  name: Повреждение заморозками
+  train: 525
+  val: 142
+  test: 70
+  total_annotations: 738

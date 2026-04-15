@@ -1,0 +1,33 @@
+metric,value
+num_classes,9
+num_images_total,4443
+num_annotations_total,15867
+images_train,3109
+annotations_train,10937
+images_val,889
+annotations_val,3456
+images_test,445
+annotations_test,1474
+bbox_per_image_mean,3.5712356515867656
+bbox_per_image_median,2.0
+bbox_per_image_min,1
+bbox_per_image_max,44
+img_width_min,450
+img_width_max,6690
+img_height_min,320
+img_height_max,5344
+img_width_mean,2542.547152824668
+img_height_mean,1844.4733288318703
+imbalance_ratio,6.176390773405699
+coef_variation_classes,0.6274994095649735
+
+class_id,class_name,train,val,test,total
+0,Недостаток P2O5,3102,1047,403,4552
+1,Листовая (бурая) ржавчина,1446,422,226,2094
+2,Мучнистая роса,1410,394,197,2001
+3,Пиренофороз,1344,446,194,1984
+4,Фузариоз,1089,398,133,1620
+5,Корневая гниль,714,217,96,1027
+6,Септориоз,699,189,89,977
+7,Недостаток N,608,201,66,875
+8,Повреждение заморозками,525,142,70,737

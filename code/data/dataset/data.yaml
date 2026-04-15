@@ -1,0 +1,15 @@
+path: /home/vanusha/diplom/diploma-plant-disease/code/data/dataset
+train: train/images
+val: val/images
+test: test/images
+nc: 9
+names:
+- Недостаток P2O5
+- Листовая (бурая) ржавчина
+- Мучнистая роса
+- Пиренофороз
+- Фузариоз
+- Корневая гниль
+- Септориоз
+- Недостаток N
+- Повреждение заморозками

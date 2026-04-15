@@ -1,0 +1,41 @@
+median: 3196.0
+target: 2259
+imbalance_ratio_before: 5.653061224489796
+imbalance_ratio_after: 3.92212389380531
+classes:
+  Недостаток P2O5:
+    before: 8864
+    after: 8864
+    delta: 0
+  Листовая (бурая) ржавчина:
+    before: 4187
+    after: 4187
+    delta: 0
+  Мучнистая роса:
+    before: 4066
+    after: 4066
+    delta: 0
+  Пиренофороз:
+    before: 3912
+    after: 3912
+    delta: 0
+  Фузариоз:
+    before: 3196
+    after: 3196
+    delta: 0
+  Корневая гниль:
+    before: 2089
+    after: 2416
+    delta: 327
+  Септориоз:
+    before: 2073
+    after: 2411
+    delta: 338
+  Недостаток N:
+    before: 1802
+    after: 2329
+    delta: 527
+  Повреждение заморозками:
+    before: 1568
+    after: 2260
+    delta: 692
