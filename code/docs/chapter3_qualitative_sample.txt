@@ -1,0 +1,12 @@
+# Chapter 3 — fixed qualitative sample for detectors comparison
+# Seed: 42. Selected stratified by dominant class + 1 multi-class scene.
+# Each line: filename (relative to code/data/dataset/test/images/).
+12967.jpg
+11506.jpg
+11238.jpg
+9951.jpg
+11946.jpg
+14569.jpg
+10636.jpg
+12682.jpg
+13660.jpg
