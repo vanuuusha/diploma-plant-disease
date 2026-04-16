@@ -1,5 +1,0 @@
-variant,n_train,mAP50,mAP5095,precision,recall,fps,epochs
-baseline,3109,,,,,,
-aug_geom,9323,,,,,,
-aug_oversample,10405,,,,,,
-aug_diffusion,10855,,,,,,
