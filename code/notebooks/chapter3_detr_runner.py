@@ -35,7 +35,9 @@ CHECKPOINT = "facebook/detr-resnet-50"
 
 def make_processor():
     from transformers import DetrImageProcessor
-    return DetrImageProcessor.from_pretrained(CHECKPOINT, do_resize=True, size={"shortest_edge": 640, "longest_edge": 640})
+    return DetrImageProcessor.from_pretrained(
+        CHECKPOINT, do_resize=True, size={"height": 640, "width": 640}, do_pad=True,
+    )
 
 
 def make_model():
@@ -105,9 +107,21 @@ class DetrYoloDataset(torch.utils.data.Dataset):
 def collate_fn_factory(processor):
     def _collate(batch):
         pv = [b["pixel_values"] for b in batch]
-        pv = torch.stack([p for p in pv])  # same size since we resize uniformly
+        # Pad to max H,W in batch so DataLoader can stack
+        max_h = max(t.shape[1] for t in pv)
+        max_w = max(t.shape[2] for t in pv)
+        padded = []
+        for t in pv:
+            c, h, w = t.shape
+            if h == max_h and w == max_w:
+                padded.append(t)
+            else:
+                pad = torch.zeros((c, max_h, max_w), dtype=t.dtype)
+                pad[:, :h, :w] = t
+                padded.append(pad)
+        pv_stacked = torch.stack(padded)
         labels = [b["labels"] for b in batch]
-        return {"pixel_values": pv, "labels": labels}
+        return {"pixel_values": pv_stacked, "labels": labels}
     return _collate
 
 
@@ -463,7 +477,6 @@ def render_qualitative(model, processor, variant: str, out_dir: Path):
 
 
 def run_single(variant: str, epochs: int, patience: int, batch: int):
-    os.environ.setdefault("HF_HUB_OFFLINE", "1")
     out_dir = TASK_DIR / f"detr_{variant}"
     cc.ensure_dir(out_dir)
     print(f"=== detr / {variant} ===")
