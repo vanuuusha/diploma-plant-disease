@@ -1,5 +1,5 @@
 variant,n_train,mAP50,mAP5095,precision,recall,fps,epochs
 baseline,3109,0.3096,0.1639,0.3514,0.3888,19.95,32
 aug_geom,9323,0.3776,0.2086,0.4906,0.3957,20.66,32
-aug_oversample,10405,,,,,,
+aug_oversample,10405,0.3742,0.2095,0.4749,0.4003,19.36,34
 aug_diffusion,10855,,,,,,
