@@ -15,7 +15,7 @@ log "START local DETR chain"
 
 for v in "${VARIANTS[@]}"; do
     log "=== detr / $v ==="
-    $PY code/notebooks/chapter3_detr_runner.py --variant "$v" 2>&1 | tee -a /tmp/train_detr.log | tail -30
+    $PY code/notebooks/chapter3_detr_runner.py --variant "$v" --batch 12 2>&1 | tee -a /tmp/train_detr.log | tail -30
     git add code/results/task_10 2>/dev/null
     if git commit -m "chapter3_detr: $v done" 2>/dev/null; then
         git push 2>&1 | tail -3 || true
