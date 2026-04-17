@@ -1,0 +1,15 @@
+{
+  "detector": "detr",
+  "variant": "aug_oversample",
+  "imgsz": 640,
+  "batch": 1,
+  "precision": "fp32",
+  "device_name": "NVIDIA GeForce RTX 5070 Ti",
+  "warmup_runs": 20,
+  "measure_runs": 100,
+  "mean_ms": 16.37873584011686,
+  "std_ms": 0.8846880006242773,
+  "median_ms": 16.440312494523823,
+  "p95_ms": 17.949471002066275,
+  "fps": 61.05477307660547
+}
