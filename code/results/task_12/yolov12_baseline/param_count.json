@@ -1,0 +1,7 @@
+{
+  "params_total": 20144427,
+  "params_total_M": 20.144,
+  "params_trainable": 0,
+  "macs": 33886950400,
+  "gflops": 67.774
+}
