@@ -1,0 +1,15 @@
+{
+  "detector": "rtdetr",
+  "variant": "aug_diffusion",
+  "imgsz": 640,
+  "batch": 1,
+  "precision": "fp32",
+  "device_name": "NVIDIA A100-SXM4-80GB",
+  "warmup_runs": 20,
+  "measure_runs": 100,
+  "mean_ms": 55.59656231976987,
+  "std_ms": 3.8853443074365663,
+  "median_ms": 54.06084800051758,
+  "p95_ms": 62.57401030125038,
+  "fps": 17.986723607988345
+}

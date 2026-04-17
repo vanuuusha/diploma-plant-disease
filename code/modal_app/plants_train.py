@@ -36,7 +36,8 @@ GPU_TYPE = os.environ.get("PLANTS_GPU", "A100-40GB")
 
 app = modal.App("plants-train")
 
-# Container image: all deps needed for all 4 detectors
+# Container image: all deps needed for all 4 detectors, + local code
+_PROJ = Path(__file__).parent.parent
 image = (
     modal.Image.debian_slim(python_version="3.12")
     .apt_install("git", "libgl1", "libglib2.0-0")
@@ -55,21 +56,13 @@ image = (
         "matplotlib",
         "scikit-learn",
     )
+    .add_local_dir(str(_PROJ / "notebooks"), remote_path="/code/notebooks")
+    .add_local_dir(str(_PROJ / "docs"), remote_path="/code/docs")
 )
 
 # Persistent volumes
 dataset_vol = modal.Volume.from_name("plants-dataset", create_if_missing=True)
 results_vol = modal.Volume.from_name("plants-results", create_if_missing=True)
-
-# Mount local code (chapter3_common.py, *_runner.py, qualitative_sample.txt)
-code_mount = modal.Mount.from_local_dir(
-    Path(__file__).parent.parent / "notebooks",
-    remote_path="/code/notebooks",
-)
-docs_mount = modal.Mount.from_local_dir(
-    Path(__file__).parent.parent / "docs",
-    remote_path="/code/docs",
-)
 
 
 @app.function(
@@ -77,7 +70,6 @@ docs_mount = modal.Mount.from_local_dir(
     gpu=GPU_TYPE,
     timeout=4 * 3600,
     volumes={"/data": dataset_vol, "/out": results_vol},
-    mounts=[code_mount, docs_mount],
 )
 def train_detector(
     detector: str,

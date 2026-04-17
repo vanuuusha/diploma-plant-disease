@@ -1,0 +1,17 @@
+{
+  "top2": {
+    "rtdetr": {
+      "mAP50": 0.4096,
+      "ci_low": 0.3569760803147303,
+      "ci_high": 0.5237382132179026,
+      "method": "per-class bootstrap (n=1000, 9 classes) — приблизительная оценка"
+    },
+    "yolov12": {
+      "mAP50": 0.3763,
+      "ci_low": 0.3448842973041941,
+      "ci_high": 0.49837497445154744,
+      "method": "per-class bootstrap (n=1000, 9 classes) — приблизительная оценка"
+    }
+  },
+  "intervals_overlap": true
+}
