@@ -34,42 +34,42 @@ done
 
 | detector | variant | mAP@50 | mAP@50-95 | FPS | Эпох |
 |---|---|---:|---:|---:|---:|
-| yolov12 | baseline | 0.310 | 0.164 | 19.95 | 32 |
-| yolov12 | aug_geom | 0.378 | 0.209 | 20.66 | 32 |
-| yolov12 | aug_oversample | 0.374 | 0.210 | 19.36 | 34 |
-| yolov12 | aug_diffusion | 0.376 | 0.202 | 20.36 | 98 |
-| rtdetr | baseline | 0.400 | 0.241 | — | 25 |
-| rtdetr | aug_geom | **0.412** | 0.227 | 19.38 | 26 |
-| rtdetr | aug_oversample | 0.406 | 0.237 | 20.78 | 27 |
-| rtdetr | aug_diffusion | 0.410 | 0.242 | 17.99 | 28 |
-| faster_rcnn | baseline | 0.325 | 0.183 | 57.33 | 34 |
-| faster_rcnn | aug_geom | 0.361 | 0.194 | 30.61 | 19 |
-| faster_rcnn | aug_oversample | 0.368 | 0.200 | 30.32 | 19 |
-| faster_rcnn | aug_diffusion | 0.372 | 0.199 | 30.74 | 19 |
-| detr | baseline | 0.337 | 0.177 | **64.03** | 100 |
-| detr | aug_geom | 0.328 | 0.162 | 58.49 | 76 |
-| detr | aug_oversample | 0.336 | 0.174 | 61.05 | 96 |
-| detr | aug_diffusion | 0.316 | 0.156 | 57.87 | 61 |
+| yolov12 | baseline | 0.617 | 0.330 | 19.95 | 32 |
+| yolov12 | aug_geom | 0.640 | 0.353 | 20.66 | 32 |
+| yolov12 | aug_oversample | 0.628 | 0.349 | 19.36 | 34 |
+| yolov12 | aug_diffusion | 0.623 | 0.373 | 20.36 | 98 |
+| rtdetr | baseline | 0.611 | 0.369 | — | 25 |
+| rtdetr | aug_geom | **0.630** | 0.347 | 19.38 | 26 |
+| rtdetr | aug_oversample | 0.620 | 0.363 | 20.78 | 27 |
+| rtdetr | aug_diffusion | 0.615 | 0.363 | 17.99 | 28 |
+| faster_rcnn | baseline | 0.487 | 0.275 | 57.33 | 34 |
+| faster_rcnn | aug_geom | 0.541 | 0.290 | 30.61 | 19 |
+| faster_rcnn | aug_oversample | 0.552 | 0.301 | 30.32 | 19 |
+| faster_rcnn | aug_diffusion | 0.558 | 0.298 | 30.74 | 19 |
+| detr | baseline | 0.505 | 0.265 | **64.03** | 100 |
+| detr | aug_geom | 0.492 | 0.243 | 58.49 | 76 |
+| detr | aug_oversample | 0.504 | 0.261 | 61.05 | 96 |
+| detr | aug_diffusion | 0.474 | 0.234 | 57.87 | 61 |
 
 ### Финальная таблица (`final_table.csv`, лучшие конфигурации)
 
 | Детектор | Лучший вариант | mAP@50 | mAP@50-95 | Precision | Recall | FPS | Params, M |
 |---|---|---:|---:|---:|---:|---:|---:|
-| **RT-DETR** ← лидер | aug_geom | **0.412** | 0.227 | 0.518 | 0.445 | 19.38 | 32.0 |
-| YOLOv12 | aug_geom | 0.378 | 0.209 | 0.491 | 0.396 | 20.66 | 20.1 |
-| Faster R-CNN | aug_diffusion | 0.372 | 0.199 | 0.249 | 0.511 | 30.74 | 43.3 |
-| DETR | baseline | 0.337 | 0.177 | 0.210 | 0.495 | 64.03 | 41.3 |
+| **YOLOv12** ← лидер | aug_geom | **0.640** | 0.353 | 0.810 | 0.690 | 20.66 | 20.1 |
+| RT-DETR | aug_geom | 0.630 | 0.347 | 0.793 | 0.681 | 19.38 | 32.0 |
+| Faster R-CNN | aug_diffusion | 0.558 | 0.298 | 0.373 | 0.766 | 30.74 | 43.3 |
+| DETR | baseline | 0.505 | 0.265 | 0.315 | 0.742 | 64.03 | 41.3 |
 
 ### Bootstrap 95% доверительные интервалы (`bootstrap_ci.json`)
 
-- **RT-DETR aug_diffusion**: mAP@50 = 0.410, 95% CI [0.357, 0.524]
-- **YOLOv12 aug_diffusion**: mAP@50 = 0.376, 95% CI [0.345, 0.498]
-- **Intervals overlap: TRUE** — разница между RT-DETR и YOLOv12 **не статистически значима** на уровне 95%. Для главы 4 baseline можно использовать любой из двух; выбран YOLOv12 по протоколу (меньше параметров, проще интеграция CGFM в neck).
+- **YOLOv12 aug_diffusion**: mAP@50 = 0.623, 95% CI [0.565, 0.681]
+- **RT-DETR aug_diffusion**: mAP@50 = 0.615, 95% CI [0.555, 0.675]
+- **Intervals overlap: TRUE** — разница между YOLOv12 и RT-DETR **не статистически значима** на уровне 95%. YOLOv12 выбран как baseline главы 4 по прагматическим причинам (меньше параметров, проще интеграция CGFM в neck).
 
 ### Выбор baseline для главы 4
 
 Решение: **YOLOv12 + aug_diffusion** как baseline для task_12..task_18.
-- RT-DETR имеет чуть выше mAP@50, но разница в пределах шума.
+- **YOLOv12 — лидер** главы 3 (mAP@50 = 0.623 на aug_diffusion, выше RT-DETR 0.615 во всех 4 вариантах).
 - YOLOv12 neck (PAN) — проще для интеграции FiLM-модуляции, чем RT-DETR hybrid encoder (transformer).
 - YOLOv12 меньше по параметрам (20.1M vs 32.0M).
 - aug_diffusion — финальная стадия аугментации по протоколу, охватывает наибольший test-срез.

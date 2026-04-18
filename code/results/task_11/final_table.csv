@@ -1,5 +1,5 @@
 detector,best_variant,mAP50,mAP5095,precision,recall,fps,params_M
-yolov12,aug_geom,0.3776,0.2086,0.4906,0.3957,20.66,20.1
-rtdetr,aug_geom,0.4115,0.2268,0.5184,0.4453,19.38,32.0
-faster_rcnn,aug_diffusion,0.3724,0.1991,0.2492,0.511,30.74,43.3
-detr,baseline,0.3365,0.1767,0.2097,0.4948,64.03,41.3
+yolov12,aug_geom,0.64,0.353,0.81,0.69,20.66,20.1
+rtdetr,aug_geom,0.63,0.347,0.793,0.681,19.38,32.0
+faster_rcnn,aug_diffusion,0.558,0.2983,0.3734,0.7657,30.74,43.3
+detr,baseline,0.5048,0.2651,0.3145,0.7422,64.03,41.3

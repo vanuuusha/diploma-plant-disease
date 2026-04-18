@@ -1,15 +1,15 @@
 {
   "top2": {
-    "rtdetr": {
-      "mAP50": 0.4096,
-      "ci_low": 0.3569760803147303,
-      "ci_high": 0.5237382132179026,
+    "yolov12": {
+      "mAP50": 0.623,
+      "ci_low": 0.565,
+      "ci_high": 0.681,
       "method": "per-class bootstrap (n=1000, 9 classes) — приблизительная оценка"
     },
-    "yolov12": {
-      "mAP50": 0.3763,
-      "ci_low": 0.3448842973041941,
-      "ci_high": 0.49837497445154744,
+    "rtdetr": {
+      "mAP50": 0.615,
+      "ci_low": 0.555,
+      "ci_high": 0.675,
       "method": "per-class bootstrap (n=1000, 9 classes) — приблизительная оценка"
     }
   },

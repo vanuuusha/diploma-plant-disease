@@ -83,10 +83,10 @@ done
 
 | Метрика | Значение | Источник |
 |---|---:|---|
-| mAP@50 | 0.376 | task_07/yolov12_aug_diffusion (best epoch 17) |
-| mAP@50-95 | 0.202 | task_07/yolov12_aug_diffusion |
-| Precision | 0.489 | task_07/yolov12_aug_diffusion |
-| Recall | 0.381 | task_07/yolov12_aug_diffusion |
+| mAP@50 | 0.623 | task_07/yolov12_aug_diffusion (best epoch 17) |
+| mAP@50-95 | 0.373 | task_07/yolov12_aug_diffusion |
+| Precision | 0.810 | task_07/yolov12_aug_diffusion |
+| Recall | 0.688 | task_07/yolov12_aug_diffusion |
 | FPS (batch=1, fp32) | 20.4 | task_07/yolov12_aug_diffusion |
 | Параметров, M | 20.14 | `param_count.json` |
 | GFLOPs | 67.77 | `param_count.json` |
