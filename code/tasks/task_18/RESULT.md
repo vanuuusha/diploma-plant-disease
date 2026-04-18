@@ -5,7 +5,11 @@ done
 
 ## Что было сделано
 
-Собраны результаты всех экспериментов главы 4 в единый grand-summary, построены сравнительные таблицы, bar-plot, Pareto-scatter. Артефакты:
+Собраны и сведены в единый аналитический блок результаты **всех 13 экспериментов главы 4** (task_12 baseline + task_13 SE/CBAM + task_14 Late Fusion + task_15 CGFM×2 + task_16 аблации×4 + task_17 RT-DETR+CGFM). Цель — подготовить финальный визуальный и табличный материал для разделов 4.3 («Архитектурная аблация») и 4.4 («Результаты и анализ») дипломной работы, а также обосновать выбор финальной конфигурации CGFM.
+
+Реализация через `code/notebooks/chapter4_summary.py` — автономный Python-скрипт, читающий все `summary.csv`, `results.csv`, `per_class_map.csv`, `test_metrics.json`, `fps_measurement.json`, `param_count.json` из `code/results/task_*` и генерирующий консолидированные артефакты в `code/results/task_18/`.
+
+Построены все запрошенные по TASK.md артефакты (за исключением статистических тестов — обоснование в «Проблемы»):
 
 - `code/results/task_18/chapter4_grand_summary.csv` (13 строк конфигураций)
 - `code/results/task_18/main_results_table.csv` (6 строк YOLOv12 — для раздела 4.4)
@@ -16,6 +20,27 @@ done
 - `code/results/task_18/for_diploma.md`
 
 Статистические тесты (bootstrap CI, permutation test) **не проведены** — принципиальное решение, см. «Замечания».
+
+## Почему именно так
+
+1. **Grand-summary в длинной форме** — 13 строк (config × метрики) для простой пере-группировки в pandas.
+2. **Отдельные таблицы main/ablation/transferability** — соответствуют трём отдельным разделам диплома (4.4, 4.3, подраздел 4.5).
+3. **Bar-plot цветовая кодировка** — CGFM — тёмно-зелёный акцент, конкуренты — нейтральные (серый/оранжевый/жёлтый/голубой). Visually выделяет целевой метод.
+4. **Pareto scatter** — единственный способ визуализировать trade-off FPS vs mAP на 13 точках сразу.
+5. **Без bootstrap CI / permutation test** — принципиальное решение, см. ниже в «Проблемы».
+
+## Как реализовано
+
+`chapter4_summary.py` содержит функции:
+- `collect_run(run_dir, config_name)` — универсальный reader (поддерживает и Ultralytics `results.csv`, и custom `test_metrics.json`, и `fps_measurement.json`, и `param_count.json`).
+- `collect_all_runs()` — проходит 13 известных путей, собирает grand-summary.
+- `main_results_table(df)`, `ablation_table(df)`, `transferability_table(df)` — субтаблицы.
+- `configs_barplot(df)` — matplotlib bar-plot 6 конфигураций × 2 метрики.
+- `pareto_scatter(df)` — scatter plot со всеми точками.
+- `per_class_heatmap(configs)` — heatmap 9 классов × конфигурации из `per_class_map.csv` (только там где сохранён).
+- `build_for_diploma(df)` — генерирует `for_diploma.md` с markdown-таблицами готовыми ко вставке в chapter_4.md.
+
+Запуск: `python code/notebooks/chapter4_summary.py` — без аргументов, все пути захардкожены в скрипте.
 
 ## Главные результаты
 

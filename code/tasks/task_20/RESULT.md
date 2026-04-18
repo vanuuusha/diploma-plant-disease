@@ -13,12 +13,27 @@ done (hp_big_batch killed по бюджету)
 
 ## Что было сделано
 
-Протестировано 4 комбинации гиперпараметров YOLOv12m на `dataset_final` (aug_diffusion), без CGFM и прочих модификаций главы 4:
+Отдельная инженерная проверка — действительно ли baseline YOLOv12m на `dataset_final` (aug_diffusion) **принципиально ограничен** по mAP@50 ≈ 0.376, или же baseline из task_07 не оптимален по гиперпараметрам, и простой HP-sweep может дать прирост. Мотивация — в главе 4 мы строим прирост CGFM над task_07 baseline (+0.1 п.п. mAP@50). Если baseline сам по себе может быть на 3+ п.п. выше с другими HP, сравнение теряет смысл.
+
+Проверено 4 ортогональные конфигурации гиперпараметров, **без** архитектурных модификаций (нет CGFM, нет CBAM, нет SE — только YOLOv12m с разными настройками):
 
 1. **hp_hsv_flip** — возвращены встроенные Ultralytics-аугментации (HSV-джиттер + горизонтальный флип), остальные hyperparams по умолчанию.
 2. **hp_adamw_cos** — оптимизатор AdamW + cosine LR schedule, lr0=0.001.
 3. **hp_dropout** — dropout=0.1 в YOLO-head'е.
 4. **hp_big_batch** — batch=48 + lr0=0.02. **Killed на 10 эпохе** (mAP@50 уже падал к 0.35, бюджет не оправдывал продолжение).
+
+## Почему именно так
+
+1. **hp_hsv_flip** — слабые Ultralytics-аугментации (HSV=0.015/0.7/0.4, fliplr=0.5, **без** mosaic/mixup) — гипотеза: наше решение отключить все встроенные аугментации в task_07 было слишком строгим, лёгкие color-space и flip могут быть ортогональны diffusion-augmentation.
+2. **hp_adamw_cos** — AdamW + cosine LR schedule, lr0=0.001 — гипотеза: SGD в Ultralytics не оптимален для малых datasets, AdamW + cosine может дать стабильнее сходимость.
+3. **hp_dropout** — dropout=0.1 в Detect head — гипотеза: регуляризация от переобучения на малом test-split'е.
+4. **hp_big_batch** — batch=48 + lr0=0.02 (scaled по linear scaling rule) — гипотеза: больший batch даёт более точные градиенты, scaled lr компенсирует.
+
+## Как реализовано
+
+Bash-скрипт `code/scripts/task20_hp_sweep.sh` последовательно вызывает 4 прогона через прямой `python -c` (не runner), с изменёнными гиперпараметрами. Все артефакты сохраняются в `out/task_20/yolov12_hp_<name>/` стандартным Ultralytics-сохранением.
+
+Запускается на A100 через cloud server (shadeform@216.81.248.198), параллельно с task_19 runs на локальной машине.
 
 ## Результаты (val-метрики Ultralytics, best epoch)
 

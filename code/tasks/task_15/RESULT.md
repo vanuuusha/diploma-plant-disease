@@ -5,19 +5,54 @@ done
 
 ## Что было сделано
 
-Реализована и обучена ключевая конфигурация главы 4 — **CGFM** (Context-Gated Feature Modulation): FiLM-модуляция выходов neck YOLOv12 контекстным вектором, получаемым лёгким сторонним энкодером сцены (MobileNetV3-Small, 1.85 M параметров, вход 224×224).
+Реализована и обучена **ключевая конфигурация всей дипломной работы** — CGFM (Context-Gated Feature Modulation): контекст сцены, вычисляемый отдельным лёгким энкодером (MobileNetV3-Small, 1.85M параметров, вход 224×224), инжектируется в neck YOLOv12m через **FiLM-модуляцию** (Feature-wise Linear Modulation, Perez et al., 2018) на каждом выходе P3/P4/P5.
 
-Интеграция выполнена через `code/models/chapter4/yolov12_patch.wrap_neck_with` с FiLM-блоком на каждом выходе neck (P3/P4/P5). Параллельно с backbone детектора входное изображение прогоняется через `ContextEncoder` (MobileNetV3-Small + LayerNorm + MLP → 256-мерный вектор $c$), вектор инжектируется в FiLM через monkey-patch `DetectionModel.forward`.
+Математически: $c = E_\text{ctx}(x)$, $\gamma_l = \sigma(W_\gamma^l c + b_\gamma^l)$, $\beta_l = W_\beta^l c + b_\beta^l$, $F_l' = \gamma_l \odot F_l + \beta_l$. Интеграция в Ultralytics — через `yolov12_patch.wrap_neck_with(y.model, block_factory=FiLMLayer, context_encoder=enc, levels=['P3','P4','P5'])`. Monkey-patch `DetectionModel.forward` генерирует контекст из 224×224-даунсемпла входа и инжектирует во все FiLM-слои через `set_context(c)` перед forward'ом детектора.
 
-Обучение: 100 эпох (early stopping patience=15), batch=16, seed=42, imgsz=640, встроенные аугментации Ultralytics отключены (как в протоколе гл. 3). Две реализации `FiLMLayer` были проверены:
+Обучение: 100 эпох (early stopping patience=15), batch=16, seed=42, imgsz=640, встроенные аугментации Ultralytics полностью отключены (hsv=0, flip=0, mosaic=0, etc). Пре-trained вес yolo12m.pt (COCO). Протокол идентичен task_13 — разница **только** в типе модуляции (FiLM+external vs SE/CBAM+self).
 
-### Попытка 1 — identity-инициализация ($W_\gamma = 0$, $W_\beta = 0$, $\gamma = 1 + \tanh(Wc+b)$, на старте $\gamma = 1$, $\beta = 0$).
+Проверены **два варианта инициализации** FiLMLayer, далее **warm-up-стратегия полностью отброшена** (см. «Проблемы»).
 
-Best epoch 14, mAP@50 = 0.3604, mAP@50-95 = 0.1909. Результат **идентичен** SE-Neck и baseline-прогону с identity-модификацией — это прямое свидетельство, что при $\gamma \approx 1$ BatchNorm перед Detect-головой «проглатывает» малые возмущения в features, и детектор обучается как обычный baseline. Модуль FiLM получает градиент только по $W_\gamma$ через $\partial \gamma / \partial W = \operatorname{sech}^2(Wc+b)\cdot c$; но поскольку обратный градиент в features пропорционален $\gamma \approx 1$, traning-динамика backbone'а не меняется, FiLM-параметры обновляются слабо и остаются вблизи identity.
+## Реализация / warm-up попытки
 
-### Попытка 2 — non-identity initialization ($W_\gamma \sim \mathcal N(0, 0.05)$, $W_\beta \sim \mathcal N(0, 0.01)$, $\gamma = 1 + 0.5\cdot\tanh(Wc+b) \in (0.5, 1.5)$).
+**Попытка 1** — identity-инициализация: $\gamma = 1 + \tanh(Wc+b)$, $W_\gamma = 0$, $b = 0$ → при любом контексте γ=1, β=0, $F'=F$ (exact identity). Идея — стабилизировать ранние эпохи, пока FiLM-слои ещё не обучились. Warm-up-стратегия из протокола: первые 3 эпохи заморожен детектор, обучаются только FiLM + ctx-encoder, потом unfreeze. **Этот план провалился** из-за двух багов Ultralytics:
 
-Best epoch 18, mAP@50 = 0.3614, mAP@50-95 = 0.1915. Принудительное нарушение identity в $\gamma$ перевело FiLM-слои в «рабочий режим» с самого начала (BN уже не может поглотить разброс ~±0.1–0.3), однако чистого выигрыша над baseline это не дало. Результат находится в пределах численной погрешности от CBAM (0.3614 vs 0.3614).
+1. **Двойной `.train()` падает** с `KeyError: 'model'` в `ultralytics/engine/model.py:768` — Ultralytics после первого train не готов ко второму на той же YOLO-instance.
+2. Попытка через `add_callback('on_train_epoch_start', unfreeze_cb)` — падает в `engine/trainer.py:414` c `KeyError: 'initial_lr'`: optimizer создан до callback-unfreeze, `param_groups` не содержат новые параметры.
+
+Решение: **отказаться от warm-up полностью** (`--skip_warmup`), все параметры trainable с epoch 0. Инициализация FiLM сохраняет identity (γ=1, β=0), так что в первых шагах backbone обучается как baseline, а FiLM медленно «просыпается».
+
+**Попытка 2** — non-identity init: $W_\gamma \sim \mathcal{N}(0, 0.05)$, $W_\beta \sim \mathcal{N}(0, 0.01)$, γ = 1 + 0.5·tanh → γ ∈ (0.5, 1.5), небольшой шум с начала. Запущена как `yolov12_cgfm_v2` локально.
+
+### Попытка 1 — identity-инициализация
+
+$W_\gamma = 0$, $W_\beta = 0$, $\gamma = 1 + \tanh(Wc+b)$, на старте $\gamma = 1$, $\beta = 0$ (exact identity при нулевом контексте, близкий к identity при нормальном).
+
+Результат: **29 эпох на A100-80GB (56 мин), best epoch 14, mAP@50 = 0.3604, mAP@50-95 = 0.1909.** Precision=0.476, Recall=0.386.
+
+Результат **идентичен до 5 знаков** SE-Neck (task_13) — это прямое свидетельство **identity-collapse**: при $\gamma \approx 1$ BatchNorm после каждого C2f/A2C2f в neck YOLOv12 поглощает малые возмущения в features, и детектор обучается как обычный baseline. Модуль FiLM получает градиент только по $W_\gamma$ через $\partial \gamma / \partial W = \operatorname{sech}^2(Wc+b)\cdot c$; но поскольку обратный градиент в features пропорционален $\gamma \approx 1$, training-динамика backbone'а не меняется, FiLM-параметры обновляются слабо и остаются вблизи identity. **FiLM функционально не включается за 29 эпох.**
+
+### Попытка 2 — non-identity initialization
+
+$W_\gamma \sim \mathcal N(0, 0.05)$, $W_\beta \sim \mathcal N(0, 0.01)$, $\gamma = 1 + 0.5\cdot\tanh(Wc+b) \in (0.5, 1.5)$.
+
+Результат: **27 эпох локально на RTX 5070 Ti (98 мин, batch=8), best epoch 18, mAP@50 = 0.3614, mAP@50-95 = 0.1915.** Precision=0.493, Recall=0.376.
+
+Принудительное нарушение identity в $\gamma$ перевело FiLM-слои в «рабочий режим» с самого начала (BN уже не может поглотить разброс ~±0.1–0.3), однако чистого выигрыша над baseline это не дало. Результат находится в пределах численной погрешности от CBAM (0.3614 vs 0.3614). Per-class mAP@50:
+
+| Класс | mAP@50 | mAP@50-95 |
+|---|---:|---:|
+| Недостаток P2O5 | 0.336 | 0.142 |
+| Листовая (бурая) ржавчина | 0.422 | 0.247 |
+| Мучнистая роса | 0.308 | 0.142 |
+| Пиренофороз | 0.310 | 0.149 |
+| Фузариоз | **0.530** | 0.286 |
+| Корневая гниль | 0.495 | 0.257 |
+| Септориоз | 0.401 | 0.257 |
+| Недостаток N | 0.245 | 0.132 |
+| Повреждение заморозками | 0.210 | 0.112 |
+
+(идентично per-class CBAM — тоже идеальное совпадение до 3 знака; это **ещё одно подтверждение identity-collapse**: когда FiLM не активна, модель эквивалентна чистому YOLOv12 и даёт те же метрики что баselines с минимальными архитектурными модификациями.)
 
 ## CGFM + Late Fusion
 

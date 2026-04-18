@@ -5,11 +5,49 @@ done
 
 ## Что было сделано
 
-По итогам task_15 и task_16 установлено, что CGFM P3+P4+P5 с идентичной-старт инициализацией FiLM функционально тождественна baseline из-за **identity-collapse** (γ ≈ 1, β = 0 + BN-поглощение остаточных возмущений). Единственная работающая конфигурация — **P5-only** (task_16, mAP@50 = 0.377, +0.1 п.п. к baseline).
+По итогам task_15 и task_16 установлено, что CGFM P3+P4+P5 с идентичной-старт инициализацией FiLM функционально тождественна baseline из-за **identity-collapse** (γ ≈ 1, β = 0 + BN-поглощение остаточных возмущений). Единственная работающая конфигурация — **P5-only** (task_16, mAP@50 = 0.377, +0.1 п.п. к baseline). Это стало мотивацией для дополнительного исследования (task_19): можно ли пробить identity-collapse и получить работающий CGFM на всех 3 уровнях FPN?
 
-Task 19 — систематическая попытка пробить identity-collapse для P3+P4+P5 через **5 архитектурных вариаций** FiLM-слоя.
+Task 19 — систематическая попытка пробить identity-collapse через **5 независимых архитектурных вариаций** FiLM-слоя. Плюс одна **микс-конфигурация** (CGFM + CBAM на P5-only) для проверки гипотезы о синергии внешнего и внутреннего контекста. Каждая вариация запущена с отдельным обучением (не reuse чекпойнтов task_15/16) для чистого сравнения. В общей сложности 6 независимых training runs.
 
-Плюс одна **микс-конфигурация** (CGFM + CBAM на P5-only) для проверки гипотезы о синергии внешнего и внутреннего контекста.
+## Почему именно так
+
+1. **5 вариаций как ортогональные оси** — каждая меняет только один аспект архитектуры, чтобы изолировать причину identity-collapse:
+   - **A. residual** → проблема в слишком агрессивной мультипликативной модуляции? Добавляем скалярный gate α (init=0) — модель может «постепенно включить» FiLM.
+   - **B. internal context** → проблема в том, что MobileNetV3 даёт контекст, семантически оторванный от detector features? Используем GAP(P5 backbone YOLOv12) как контекст.
+   - **C. wide γ** → проблема в слишком узком диапазоне γ (0.5-1.5)? Расширяем до (0.1, 1.9).
+   - **D. non-zero β init** → проблема в том, что β всегда стартует около 0? Инициализируем W_β с std=0.1 (vs 0.01 в default).
+2. **Один hyperparameter tuning за раз** (не grid search) — в рамках бюджета 4-5 часов GPU, grid невозможен. Ortogonal isolation более информативна.
+3. **Микс CGFM+CBAM на P5-only** — выбран именно P5-only (а не P3+P4+P5), потому что P5-only — единственная работающая база CGFM. Добавление CBAM поверх unlikely to improve, но проверяется из-за нулевой стоимости (~45 минут прогона).
+4. **A100 + local параллельно** — задачи распределены по доступности GPU.
+
+## Как реализовано
+
+Все вариации доступны через `code/notebooks/chapter4_runner.py`:
+- `--film_variant {default, wide, beta_noise}` — выбор математики FiLM
+- `--film_residual` — включить α-gated residual path
+- `--internal_context` — использовать GAP(P5 backbone) вместо ContextEncoder
+- `--mix_cbam` — применить CBAM на тех же уровнях перед CGFM
+
+В `FiLMLayer.__init__` разветвление по `variant`:
+```python
+if variant == "wide":
+    γ = 0.1 + 1.8 * sigmoid(Wc+b)
+elif variant == "beta_noise":
+    γ = 1.0 + 0.5 * tanh(Wc+b)  # default γ
+    self.to_beta.weight = N(0, 0.1)  # ← отличие от default
+else:  # default
+    γ = 1.0 + 0.5 * tanh(Wc+b)
+    self.to_beta.weight = N(0, 0.01)
+
+if residual:
+    self.alpha = nn.Parameter(zeros(1))  # init=0 → identity
+    return F + alpha * (modulated - F)
+```
+
+Для Internal context создан класс `_InternalContextEncoder(yolo_model, out_dim=256)` в runner'е:
+- Dry-run backbone, находит индекс слоя перед первым Upsample (== backbone-P5, SPPF output).
+- Регистрирует forward_hook: когда backbone-P5 вычислен, hook прогоняет его через proj (GAP → LayerNorm → MLP → out_dim), и сохраняет в film_layers.
+- Атрибут `is_internal_hook = True` — сигнал для `wrap_neck_with` не делать monkey-patch forward.
 
 ## Вариации (все P3+P4+P5, MobileNetV3-Small)
 

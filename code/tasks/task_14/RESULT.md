@@ -5,18 +5,73 @@ done
 
 ## Что было сделано
 
-Реализован полный пайплайн Late Fusion согласно протоколу главы 4:
+Реализован и обучен классификатор **Late Fusion** — архитектурный антипод CGFM. Контекст сцены здесь подключается **после** детекции: baseline YOLOv12 даёт bbox-координаты и тентативный класс, а отдельный MLP-классификатор (`LateFusionClassifier`), получающий ROI-feature bbox'а и глобальный контекст-вектор, **переопределяет** предсказанный класс. Координаты боксов не меняются.
+
+Пайплайн из 5 этапов:
 
 1. **Заморозка baseline.** YOLOv12 из `task_12/yolov12_baseline/weights/best.pt` загружен; `requires_grad=False` для всех параметров. Baseline отвечает только за координаты боксов.
 2. **Сбор ROI-датасета.** Проход по train/val/test-срезам dataset_final:
-   - прогон baseline → предсказанные боксы (conf ≥ 0.1);
-   - отбор только тех предсказаний, у которых IoU ≥ 0.5 с каким-либо GT-боксом;
+   - прогон baseline (inference mode) → предсказанные боксы (conf ≥ 0.1);
+   - отбор только тех предсказаний, у которых IoU ≥ 0.5 с каким-либо GT-боксом (IoU-матрица через `torchvision.ops`);
    - ROI-фича: `torchvision.ops.roi_align` с `spatial_scale = W_feat / 640` из feature map P4 neck (`Detect.f[1]`), размер ROI 7×7×512;
    - контекст всей сцены: `ContextEncoder('mobilenetv3_small_100', out_dim=256)` на 224×224-ресайзе изображения;
-   - GT-класс matching bbox.
-3. **Обучение LateFusionClassifier.** AdamW lr=1e-3, wd=1e-4, CosineAnnealingLR, CrossEntropy, batch=128, до 30 эпох, patience=5.
-4. **End-to-end инференс** на test: baseline предсказывает боксы, LateFusion переопределяет класс каждого bbox; координаты не меняются.
-5. **Метрики** — `torchmetrics.MeanAveragePrecision` с `class_metrics=True`.
+   - GT-класс matching bbox → target label.
+3. **Обучение LateFusionClassifier.** AdamW lr=1e-3, weight_decay=1e-4, CosineAnnealingLR (T_max=30), CrossEntropy loss, batch=128, до 30 эпох, patience=5. Train/val split по заранее собранным ROI-датасетам.
+4. **End-to-end инференс** на test: baseline (frozen) предсказывает боксы → для каждого bbox — ROI-feature + context → классификатор выдаёт новый class logits → класс переопределяется. Координаты остаются от baseline.
+5. **Метрики** — `torchmetrics.MeanAveragePrecision` с `class_metrics=True` на full test-сплите. Получаем map_50, map, per_class_map, mar_100.
+
+## Почему именно так
+
+1. **Заморозка baseline вместо fine-tuning** — Late Fusion по определению работает поверх уже обученного детектора, без изменения detector-части. Это делает сравнение с CGFM архитектурно честным: обе конфигурации стартуют из одинакового baseline, отличается **только** точка подключения контекста.
+2. **ROI из P4 (средний уровень)** — компромисс между семантикой (P5 высокоуровневый, но грубый спатиал) и разрешением (P3 мелкий, но менее семантичный). roi_align 7×7 — стандартный размер для Faster R-CNN-like heads, хорошо работает для классификации.
+3. **IoU ≥ 0.5 как фильтр** — стандартный COCO-style порог для positive ROI. Более низкий порог (0.3) принёс бы больше false positive'ов в training-set классификатора. Более высокий (0.7) отсёк бы большинство предсказаний baseline.
+4. **MobileNetV3-Small как ContextEncoder** — тот же backbone, что будет использоваться в CGFM (task_15), для прямого сопоставления.
+5. **AdamW + Cosine** — стандартный рецепт для малых MLP-классификаторов. lr=1e-3 достаточно агрессивный для быстрой сходимости (~5-10 эпох).
+6. **Batch=128** — ROI-датасет маленький (~34K train ROIs), batch=128 даёт ~266 шагов на эпоху — достаточно для MLP.
+7. **30 эпох + patience=5** — с запасом; MLP-классификаторы обычно сходятся за 5-15 эпох.
+
+## Как реализовано
+
+Весь пайплайн в `code/notebooks/chapter4_late_fusion.py` (автономный Python-скрипт, не ноутбук).
+
+**Сбор ROI:**
+```python
+# forward_hook на P4-layer для перехвата feature map
+detect = y_model.model[-1]
+p4_idx = detect.f[1]
+p4_feat = {}
+y_model.model[p4_idx].register_forward_hook(
+    lambda m, i, o: p4_feat.__setitem__("map", o)
+)
+
+for img_path in files:
+    gt = read_yolo_labels(labels_path, iw, ih)  # [N, 5]
+    result = y_model.predict(source=img_path, conf=0.1, imgsz=640)[0]
+    iou = iou_matrix(result.boxes.xyxy, gt[:, 1:5])
+    ok_mask = iou.max(dim=1).values >= 0.5
+    # ROI-align из P4-feature:
+    roi = roi_align(p4_feat["map"], matched_boxes * scale,
+                    output_size=(7, 7), spatial_scale=W_feat/640)
+    # context:
+    c = ctx_enc(resize(img, 224))
+    # save (roi, c, gt_class)
+```
+
+**Training loop:**
+```python
+model = LateFusionClassifier(roi_channels=512, roi_spatial=7, context_dim=256, num_classes=9)
+opt = AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
+sched = CosineAnnealingLR(opt, T_max=30)
+for epoch in range(30):
+    for roi_batch, ctx_batch, y_batch in loader:
+        logits = model(roi_batch, ctx_batch)
+        loss = F.cross_entropy(logits, y_batch)
+        loss.backward(); opt.step(); opt.zero_grad()
+    sched.step()
+    # early stop if val_loss не улучшается 5 эпох
+```
+
+**End-to-end eval** использует torchmetrics MeanAveragePrecision в COCO-стиле: для каждого test-изображения predict boxes → roi_align → classify → обновить metric. Координаты baseline сохраняются, изменяются только labels и scores.
 
 ## Размер ROI-датасета
 

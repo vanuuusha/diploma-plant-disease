@@ -5,9 +5,22 @@ done
 
 ## Что было сделано
 
-Реализована интеграция CGFM в трансформерный детектор **RT-DETR** (HuggingFace `RTDetrForObjectDetection`, checkpoint `PekingU/rtdetr_r50vd`). Модуляция FiLM применяется к выходам ResNet-50-бэкбона (3 уровня с каналами 512, 1024, 2048) через `forward_hook` на `RTDetrConvEncoder`. Контекст вычисляется обёрткой `CGFMWrapper`, принимающей pixel_values, downsampling до 224×224 и пропускающей через `ContextEncoder('mobilenetv3_small_100')`.
+Реализована интеграция CGFM в принципиально иной по архитектуре детектор — трансформерный **RT-DETR** (HuggingFace `RTDetrForObjectDetection`, checkpoint `PekingU/rtdetr_r50vd`), чтобы проверить **переносимость подхода** CGFM на архитектуру без neck PAN/FPN. RT-DETR имеет `RTDetrConvEncoder` (ResNet-50) → `RTDetrHybridEncoder` (transformer с cross-scale attention) → decoder queries → DetectionHead. CGFM внедрён на границе между backbone и hybrid encoder: feature maps бэкбона модулируются FiLM перед тем как попасть в transformer.
 
-Интеграция через hook выбрана вместо monkey-patch из-за сложности HF-внутренностей (RT-DETR encoder принимает `pixel_values` + `pixel_mask`, возвращает список `tuple[feature, mask]` на трёх уровнях). Hook модифицирует первый элемент каждого tuple (feature map), сохраняя маски нетронутыми.
+**Техническая реализация:**
+- Модуляция FiLM применяется к выходам ResNet-50-бэкбона (3 уровня с каналами 512, 1024, 2048) через `forward_hook` на `RTDetrConvEncoder`.
+- Контекст вычисляется обёрткой `CGFMWrapper` в `forward`: `pixel_values → F.interpolate(224×224) → ContextEncoder('mobilenetv3_small_100') → c ∈ ℝ²⁵⁶`. Вектор $c$ сохраняется в `self.base._cgfm['context']`, откуда hook читает его при прохождении backbone.
+- Интеграция через hook выбрана вместо monkey-patch из-за сложности HF-внутренностей. `RTDetrConvEncoder.forward(pixel_values, pixel_mask)` возвращает список `tuple[feature, mask]` на трёх уровнях (каналы 512/1024/2048, размеры 80×80 / 40×40 / 20×20). Hook модифицирует **первый элемент** каждого tuple (feature map), применяя `film[i](feat, context)`, сохраняя mask нетронутой.
+- Training loop собственный (не HF Trainer) — для контроля над AMP, gradient clipping и warm-up (последний оказался не нужен).
+
+## Почему именно так
+
+1. **RT-DETR как второй детектор** — чтобы проверить переносимость CGFM на архитектуру с принципиально иной структурой: hybrid encoder с cross-scale attention вместо PAN FPN. Успешный перенос = CGFM универсален; провал = показывает границы применимости метода.
+2. **Точка вставки FiLM — выходы backbone** (не CCFM-выходы hybrid encoder'а) — компромисс. Теоретически FiLM после hybrid encoder был бы семантически аналогичнее YOLOv12-neck (modulate post-aggregation features). Но HF RT-DETR сплющивает multi-scale features в единый token-sequence после hybrid encoder, и per-channel FiLM теряет смысл. Более простое решение — на выходах backbone.
+3. **fp32 без AMP** — из-за проблемы NaN в fp16 (см. «Проблемы / Замечания»).
+4. **MobileNetV3-Small контекст** — тот же, что в YOLOv12+CGFM task_15, для прямого сопоставления эффекта на двух детекторах.
+5. **`forward_hook` вместо monkey-patch** — более стабильный и декларативный способ интеграции в HF модель. HF-модули активно используют `nn.Module` registration, monkey-patch может ломать save/load.
+6. **Собственный training loop** — HF Trainer неудобен для custom-modifications модели (CGFMWrapper вокруг base), для контроля gradient accumulation, AMP off.
 
 ## Параметры обучения
 
@@ -24,6 +37,31 @@ done
 | Seed | 42 |
 
 Время обучения: 115.5 мин (20 эпох, 5.8 мин/эпоха).
+
+## Как реализовано
+
+```python
+class CGFMWrapper(nn.Module):
+    def __init__(self, base_model, context_encoder, device):
+        super().__init__()
+        self.base = base_model
+        self.context_encoder = context_encoder
+        self.film_layers, self.hook_handle = install_cgfm_hooks(
+            base_model, context_encoder, device)
+
+    def forward(self, pixel_values, labels=None, **kw):
+        x_ctx = F.interpolate(pixel_values.float(), size=(224, 224),
+                              mode="bilinear", align_corners=False)
+        self.base._cgfm["context"] = self.context_encoder(x_ctx)
+        try:
+            return self.base(pixel_values=pixel_values, labels=labels, **kw)
+        finally:
+            self.base._cgfm["context"] = None
+```
+
+Hook-функция: при каждом forward'е `RTDetrConvEncoder` извлекает текущий `context`, применяет FiLM к каждому feature map в output'е.
+
+Training loop: AMP off, gradient clip=1.0, skip nan/inf batches, `torchmetrics.MeanAveragePrecision` на test с `class_metrics=True`.
 
 ## Результаты (test)
 
