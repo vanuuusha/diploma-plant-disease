@@ -16,29 +16,59 @@ import torch.nn as nn
 
 
 class FiLMLayer(nn.Module):
-    def __init__(self, context_dim: int, feature_channels: int):
+    """
+    Варианты:
+      variant='default' (base v2):  γ = 1 + 0.5·tanh(Wc+b) ∈ (0.5, 1.5)
+      variant='wide':               γ = 0.1 + 1.8·σ(Wc+b) ∈ (0.1, 1.9)
+      variant='beta_noise':         как default, но init β c std=0.1
+      residual=True:                F' = F + α·(γF + β - F),  α init=0
+    """
+
+    def __init__(self, context_dim: int, feature_channels: int,
+                 variant: str = "default", residual: bool = False):
         super().__init__()
         self.context_dim = context_dim
         self.feature_channels = feature_channels
+        self.variant = variant
+        self.residual = residual
+
         self.to_gamma = nn.Linear(context_dim, feature_channels)
         self.to_beta = nn.Linear(context_dim, feature_channels)
-        # γ = 1 + 0.5·tanh(Wc + b); инициализация W с небольшим шумом —
-        # γ ≠ 1 сразу, чтобы модуляция влияла на forward pass c самого начала
-        # (идентичная инициализация приводит к collapse: при γ=1 BN абсорбирует
-        # модуляцию и модель обучается как baseline).
-        # Масштаб 0.5 ограничивает γ ∈ (0.5, 1.5) — безопасная модуляция.
-        nn.init.normal_(self.to_gamma.weight, std=0.05)
-        nn.init.zeros_(self.to_gamma.bias)
-        # β с малым шумом для выхода из identity-ловушки.
-        nn.init.normal_(self.to_beta.weight, std=0.01)
-        nn.init.zeros_(self.to_beta.bias)
+
+        if variant == "wide":
+            # γ = 0.1 + 1.8·σ(Wc+b): при W=0, b=0 → γ=1 (identity), но широкий диапазон
+            nn.init.zeros_(self.to_gamma.weight)
+            nn.init.zeros_(self.to_gamma.bias)
+            nn.init.normal_(self.to_beta.weight, std=0.01)
+            nn.init.zeros_(self.to_beta.bias)
+        elif variant == "beta_noise":
+            nn.init.normal_(self.to_gamma.weight, std=0.05)
+            nn.init.zeros_(self.to_gamma.bias)
+            nn.init.normal_(self.to_beta.weight, std=0.1)   # ← значительно больше
+            nn.init.zeros_(self.to_beta.bias)
+        else:  # default (v2)
+            nn.init.normal_(self.to_gamma.weight, std=0.05)
+            nn.init.zeros_(self.to_gamma.bias)
+            nn.init.normal_(self.to_beta.weight, std=0.01)
+            nn.init.zeros_(self.to_beta.bias)
+
+        if residual:
+            # F' = F + α·(modulated - F); при α=0 — точный identity
+            self.alpha = nn.Parameter(torch.zeros(1))
+
+    def _gamma(self, context: torch.Tensor) -> torch.Tensor:
+        if self.variant == "wide":
+            return 0.1 + 1.8 * torch.sigmoid(self.to_gamma(context))  # (0.1, 1.9)
+        return 1.0 + 0.5 * torch.tanh(self.to_gamma(context))         # (0.5, 1.5)
 
     def forward(self, features: torch.Tensor, context: torch.Tensor) -> torch.Tensor:
-        # features: [B, C, H, W]; context: [B, D]
-        gamma = 1.0 + 0.5 * torch.tanh(self.to_gamma(context))  # [B, C], (0.5, 1.5)
-        beta = self.to_beta(context)                             # [B, C]
-        return gamma[..., None, None] * features + beta[..., None, None]
+        gamma = self._gamma(context)                   # [B, C]
+        beta = self.to_beta(context)                   # [B, C]
+        modulated = (gamma[..., None, None] * features
+                     + beta[..., None, None])
+        if self.residual:
+            return features + self.alpha * (modulated - features)
+        return modulated
 
     def last_gamma(self, context: torch.Tensor) -> torch.Tensor:
-        """Вернуть γ без модификации features (для γ-анализа)."""
-        return 1.0 + 0.5 * torch.tanh(self.to_gamma(context))
+        return self._gamma(context)

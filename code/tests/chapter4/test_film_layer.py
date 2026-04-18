@@ -48,5 +48,5 @@ def test_last_gamma_shape():
 
 
 if __name__ == "__main__":
-    test_shape(); test_identity_at_init(); test_gradients_flow(); test_last_gamma_shape()
+    test_shape(); test_near_identity_at_init(); test_gradients_flow(); test_last_gamma_shape()
     print("FiLMLayer: 4/4 ok")

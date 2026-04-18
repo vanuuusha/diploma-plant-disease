@@ -154,11 +154,16 @@ def wrap_neck_with(
         seq[idx] = wrapped
         modulated_layers.append(wrapped)
 
-    # Для FiLM: патчим DetectionModel.forward — на входе генерируем контекст
+    # Для FiLM: два режима работы
     if context_encoder is not None:
-        _patch_forward_with_context(det_model, context_encoder, modulated_layers)
-        # прикрепляем энкодер к модели, чтобы он участвовал в .to(), .train()
         det_model.context_encoder = context_encoder
+        if getattr(context_encoder, "is_internal_hook", False):
+            # Internal context: hook уже зарегистрирован, инжектирует context
+            # во film_layers во время forward. Только передадим ссылки.
+            context_encoder.film_layers = modulated_layers
+        else:
+            # External context: monkey-patch DetectionModel.forward
+            _patch_forward_with_context(det_model, context_encoder, modulated_layers)
 
     return {
         "modulated_layers": modulated_layers,

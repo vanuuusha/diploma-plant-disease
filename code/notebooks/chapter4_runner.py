@@ -35,7 +35,71 @@ from models.chapter4.cbam_block import CBAMBlock
 from models.chapter4.context_encoder import ContextEncoder
 from models.chapter4.yolov12_patch import wrap_neck_with, describe_wrap
 
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
 CTX_DIM = 256
+
+
+class _InternalContextEncoder(nn.Module):
+    """Контекст из самой YOLOv12: GAP на backbone-P5 (SPPF output) + MLP → out_dim.
+
+    Реализация: forward_hook на backbone-P5 слое (последний слой до первого
+    Upsample) сразу инжектирует контекст во все film_layers. Detector forward
+    последовательный: backbone → P5 hook срабатывает → context готов →
+    neck (P3/P4/P5) с FiLM использует контекст. Всё в одном проходе.
+
+    Атрибут `is_internal_hook = True` — сигнал для `wrap_neck_with` не
+    делать monkey-patch `forward` (контекст поставляется hook'ом).
+    """
+
+    is_internal_hook = True
+
+    def __init__(self, yolo_model, out_dim: int = 256):
+        super().__init__()
+        # Находим backbone-P5: слой перед первым Upsample в model.model
+        from torch.nn.modules.upsampling import Upsample
+        bp5_idx = None
+        for i, layer in enumerate(yolo_model.model):
+            if isinstance(layer, Upsample):
+                bp5_idx = i - 1
+                break
+        if bp5_idx is None:
+            bp5_idx = 9  # fallback для YOLOv12m
+        # Dry-run для определения числа каналов
+        device = next(yolo_model.parameters()).device
+        with torch.no_grad():
+            dummy = torch.zeros(1, 3, 640, 640, device=device)
+            cache = {}
+            h = yolo_model.model[bp5_idx].register_forward_hook(
+                lambda m, i, o: cache.__setitem__("out", o))
+            yolo_model(dummy)
+            h.remove()
+            p5_channels = cache["out"].shape[1]
+        self.bp5_idx = bp5_idx
+        self.p5_channels = p5_channels
+        self.proj = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+            nn.LayerNorm(p5_channels),
+            nn.Linear(p5_channels, out_dim),
+            nn.ReLU(inplace=True),
+            nn.Linear(out_dim, out_dim),
+        )
+        self.film_layers: list = []  # заполняется wrap_neck_with
+        # Регистрируем hook — при прохождении backbone-P5 инжектирует
+        # context во все film_layers
+        def _inject(module, inputs, output):
+            c = self.proj(output)  # [B, out_dim]
+            for fl in self.film_layers:
+                fl.set_context(c)
+        self._hook = yolo_model.model[bp5_idx].register_forward_hook(_inject)
+        print(f"[InternalContextEncoder] bp5_idx={bp5_idx}  channels={p5_channels}")
+
+    def forward(self, x):
+        # Неиспользуется напрямую — hook делает всю работу
+        return None
 
 
 def parse_args() -> argparse.Namespace:
@@ -60,6 +124,14 @@ def parse_args() -> argparse.Namespace:
                    help="для CGFM: сколько эпох фриза детектора")
     p.add_argument("--skip_warmup", action="store_true",
                    help="обучать end-to-end сразу (без warm-up)")
+    p.add_argument("--film_variant", default="default",
+                   choices=["default", "wide", "beta_noise"])
+    p.add_argument("--film_residual", action="store_true",
+                   help="FiLM с residual α-gated, F' = F + α·(γF + β - F)")
+    p.add_argument("--internal_context", action="store_true",
+                   help="контекст = GAP(P5) от detector'а, без ContextEncoder")
+    p.add_argument("--mix_cbam", action="store_true",
+                   help="перед CGFM применить CBAM на тех же уровнях (микс)")
     return p.parse_args()
 
 
@@ -75,12 +147,28 @@ def build_model(args):
         info = wrap_neck_with(y.model, block_factory=CBAMBlock,
                               context_encoder=None, levels=args.levels)
     else:  # cgfm
-        context_encoder = ContextEncoder(args.encoder, out_dim=CTX_DIM, pretrained=True)
+        # Сначала применяем CBAM (если микс), потом FiLM — два wrap подряд
+        if args.mix_cbam:
+            wrap_neck_with(y.model, block_factory=CBAMBlock,
+                           context_encoder=None, levels=args.levels)
+        factory = lambda ch: FiLMLayer(
+            context_dim=CTX_DIM, feature_channels=ch,
+            variant=args.film_variant, residual=args.film_residual,
+        )
+        if args.internal_context:
+            # внутренний контекст: GAP(P5) от самой YOLOv12 (baseline-features)
+            # FiLM получит 512-мерный вектор (channels P5 для YOLOv12m = 512)
+            # После эмбеддинг-проекции в 256 (как у MobileNetV3 context)
+            context_encoder = _InternalContextEncoder(y.model, out_dim=CTX_DIM)
+            factory = lambda ch: FiLMLayer(
+                context_dim=CTX_DIM, feature_channels=ch,
+                variant=args.film_variant, residual=args.film_residual,
+            )
+        else:
+            context_encoder = ContextEncoder(args.encoder, out_dim=CTX_DIM, pretrained=True)
         info = wrap_neck_with(
-            y.model,
-            block_factory=lambda ch: FiLMLayer(context_dim=CTX_DIM, feature_channels=ch),
-            context_encoder=context_encoder,
-            levels=args.levels,
+            y.model, block_factory=factory,
+            context_encoder=context_encoder, levels=args.levels,
         )
         film_layers = info["modulated_layers"]
     print(f"[model] config={args.config} wrap={describe_wrap(info)}")
