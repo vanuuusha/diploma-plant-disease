@@ -32,10 +32,10 @@ done (с частичным набором артефактов — см. «За
 
 | Вариант | n_train | mAP@50 | mAP@50-95 | Precision | Recall | FPS | Эпох |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| baseline | 3 109 | 0.487 | 0.275 | 0.340 | 0.418 | 57.3 | 34 |
-| aug_geom | 9 323 | 0.541 | 0.290 | 0.211 | 0.553 | 30.6 | 19 |
-| aug_oversample | 10 405 | 0.552 | 0.301 | 0.267 | 0.511 | 30.3 | 19 |
-| aug_diffusion | 10 855 | **0.558** | **0.298** | 0.249 | 0.511 | 30.7 | 19 |
+| baseline | 3 109 | 0.487 | 0.275 | 0.509 | 0.628 | 57.3 | 34 |
+| aug_geom | 9 323 | 0.541 | 0.290 | 0.317 | 0.830 | 30.6 | 19 |
+| aug_oversample | 10 405 | 0.552 | 0.301 | 0.401 | 0.767 | 30.3 | 19 |
+| aug_diffusion | 10 855 | **0.558** | **0.298** | 0.373 | 0.766 | 30.7 | 19 |
 
 ### Прирост от аугментаций
 
@@ -50,7 +50,7 @@ done (с частичным набором артефактов — см. «За
 ### Конфигурация лучшей модели
 
 - `faster_rcnn_aug_diffusion` с mAP@50 = 0.558, mAP@50-95 = 0.298, 19 эпох.
-- Precision=0.249, Recall=0.511 — **очень высокий Recall при низком Precision**: модель склонна к over-detection (много FP), что характерно для Faster R-CNN с agressive RPN и низким NMS-threshold.
+- Precision=0.373, Recall=0.766 — **очень высокий Recall при умеренном Precision**: модель склонна к over-detection (много FP), что характерно для Faster R-CNN с agressive RPN и низким NMS-threshold.
 - FPS = 30.7 на A100 (batch=1) — **самый быстрый среди всех детекторов главы 3** после DETR. Это неожиданно: обычно Faster R-CNN медленнее, но в нашем случае малое число объектов на кадр (средне 7.76 объектов на изображение) ускоряет RPN proposal generation.
 
 ## Проблемы / Замечания
@@ -58,7 +58,7 @@ done (с частичным набором артефактов — см. «За
 - **Критический пробел в артефактах:** для всех 4 вариантов сохранились только `predictions_examples/` и (только для `aug_diffusion`) `best.pt` — итоговых plots (learning_curves.png, confusion_matrix.png, per_class_map.csv) нет. Причина: torchvision Faster R-CNN runner не имеет встроенного Ultralytics-style plotting, и логика сохранения графиков в `chapter3_torchvision_runner.py` была написана позже, чем прогоны были завершены на Modal. Итоговые метрики корректно восстановлены в summary.csv через Modal-функцию возврата словаря.
 - **Per-class mAP не сохранён** в отдельный CSV — он был вычислен через torchmetrics при eval, но не персистнут. Для главы 3 используется только summary.csv.
 - **aug_geom/aug_oversample/aug_diffusion сошлись за 19 эпох каждый** — подозрительно быстро. Возможная причина: Early stopping trigger Ultralytics-style используется неправильно в torchvision-runner'е (patience считает эпохи без улучшения val-loss, а не mAP). В результате модель могла не достичь полной capacity. Для честного сравнения стоило бы увеличить patience до 30. Это техническое ограничение реализации.
-- **Низкий Precision** (0.21–0.27) — особенность Faster R-CNN со стандартной конфигурацией torchvision, включая `rpn_nms_thresh=0.7` (слишком щадящий). Тюнинг NMS-порога мог бы повысить Precision за счёт Recall.
+- **Умеренный Precision** (0.32–0.51) — особенность Faster R-CNN со стандартной конфигурацией torchvision, включая `rpn_nms_thresh=0.7` (слишком щадящий). Тюнинг NMS-порога мог бы повысить Precision за счёт Recall.
 - **Графика `per_class_contribution/` для Faster R-CNN в task_11 нет** — поскольку per_class_map.csv не сохранён, task_11 исключил Faster R-CNN из per-class heatmap'а и построил только для YOLOv12/RT-DETR/DETR.
 - **Возможное улучшение** (за рамками бюджета): повторный прогон всех 4 вариантов с исправленным patience и полным plotting — ~33 часа A100 (Modal ≈ 66 USD).
 
