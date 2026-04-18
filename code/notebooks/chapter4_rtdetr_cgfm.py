@@ -1,23 +1,21 @@
 """
-Task 17 — RT-DETR + CGFM. Переносимость подхода на трансформерный детектор.
+Task 17 — RT-DETR + CGFM. FiLM-модуляция backbone feature maps через forward_hook.
 
-Пайплайн близок к chapter3_detr_runner.py, но использует HuggingFace
-`RTDetrForObjectDetection`. FiLM-слои вставляются на выходы encoder-слоёв
-(feature maps до Decoder queries). Контекстный вектор генерируется
-отдельным `ContextEncoder` (MobileNetV3-Small), общим для всех FiLM-слоёв.
+Пайплайн:
+  1. HF RTDetrForObjectDetection на класс 9.
+  2. Регистрируем forward_hook на RTDetrConvEncoder: hook модифицирует
+     feature_maps в output, применяя FiLM(features, context).
+  3. Контекст вычисляется в обёртке forward на основе pixel_values.
+  4. Training loop простой: собственный, без HF Trainer.
 
 Usage:
-  python chapter4_rtdetr_cgfm.py --out code/results/task_17 \
-      --variant cgfm --data code/data/dataset_final --epochs 100 --batch 8
-
-Поддерживает также --variant baseline (без CGFM) — но это redundant с task_08
-и используется только при отсутствии референса.
+  python chapter4_rtdetr_cgfm.py --out code/results/task_17 --data ~/dataset_final \
+      --epochs 50 --batch 8 --variant cgfm
 """
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import time
 from pathlib import Path
@@ -32,24 +30,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from models.chapter4 import ContextEncoder, FiLMLayer  # noqa: E402
 
 
-def parse_args():
-    p = argparse.ArgumentParser()
-    p.add_argument("--out", required=True)
-    p.add_argument("--variant", default="cgfm", choices=["cgfm", "baseline"])
-    p.add_argument("--name", default=None)
-    p.add_argument("--data", default="code/data/dataset_final")
-    p.add_argument("--epochs", type=int, default=100)
-    p.add_argument("--patience", type=int, default=15)
-    p.add_argument("--batch", type=int, default=8)
-    p.add_argument("--imgsz", type=int, default=640)
-    p.add_argument("--seed", type=int, default=42)
-    p.add_argument("--encoder", default="mobilenetv3_small_100")
-    p.add_argument("--warmup_epochs", type=int, default=3)
-    p.add_argument("--checkpoint", default="PekingU/rtdetr_r50vd")
-    p.add_argument("--num_workers", type=int, default=4)
-    return p.parse_args()
-
-
 CLASS_NAMES = [
     "Недостаток P2O5", "Листовая (бурая) ржавчина", "Мучнистая роса",
     "Пиренофороз", "Фузариоз", "Корневая гниль", "Септориоз",
@@ -59,9 +39,24 @@ NUM_CLASSES = len(CLASS_NAMES)
 CTX_DIM = 256
 
 
-class YoloDataset(torch.utils.data.Dataset):
-    """Загружает YOLO-формат (txt-метки) для HuggingFace RT-DETR processor."""
+def parse_args():
+    p = argparse.ArgumentParser()
+    p.add_argument("--out", required=True)
+    p.add_argument("--variant", default="cgfm", choices=["cgfm", "baseline"])
+    p.add_argument("--name", default=None)
+    p.add_argument("--data", default="code/data/dataset_final")
+    p.add_argument("--epochs", type=int, default=50)
+    p.add_argument("--patience", type=int, default=8)
+    p.add_argument("--batch", type=int, default=8)
+    p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--encoder", default="mobilenetv3_small_100")
+    p.add_argument("--warmup_epochs", type=int, default=2)
+    p.add_argument("--checkpoint", default="PekingU/rtdetr_r50vd")
+    p.add_argument("--num_workers", type=int, default=2)
+    return p.parse_args()
 
+
+class YoloDataset(torch.utils.data.Dataset):
     def __init__(self, root: Path, split: str, processor):
         self.img_dir = root / split / "images"
         self.lbl_dir = root / split / "labels"
@@ -78,7 +73,7 @@ class YoloDataset(torch.utils.data.Dataset):
         img = Image.open(img_p).convert("RGB")
         iw, ih = img.size
         lbl_p = self.lbl_dir / (img_p.stem + ".txt")
-        boxes, labels = [], []
+        ann = []
         if lbl_p.exists():
             for line in lbl_p.read_text().splitlines():
                 parts = line.strip().split()
@@ -86,32 +81,24 @@ class YoloDataset(torch.utils.data.Dataset):
                     continue
                 cls = int(float(parts[0]))
                 cx, cy, w, h = map(float, parts[1:5])
-                # COCO-style (x, y, w, h) в абсолютных пикселях — processor сам
-                # конвертирует в формат модели
                 x1 = (cx - w / 2) * iw
                 y1 = (cy - h / 2) * ih
                 ww = w * iw
                 hh = h * ih
-                boxes.append([x1, y1, ww, hh])
-                labels.append(cls)
-        target = {
-            "image_id": i,
-            "annotations": [
-                {"bbox": b, "category_id": c, "area": b[2] * b[3], "iscrowd": 0}
-                for b, c in zip(boxes, labels)
-            ],
-        }
+                ann.append({"bbox": [x1, y1, ww, hh],
+                            "category_id": cls,
+                            "area": ww * hh, "iscrowd": 0})
+        target = {"image_id": i, "annotations": ann}
         enc = self.processor(images=img, annotations=target, return_tensors="pt")
-        # enc["pixel_values"] shape [1, 3, H, W]; enc["labels"] — список
         return {
             "pixel_values": enc["pixel_values"].squeeze(0),
             "labels": enc["labels"][0],
-            "orig_image": img,
+            "orig_h": ih, "orig_w": iw,
             "file": str(img_p),
         }
 
 
-def _collate(batch):
+def collate(batch):
     pv = [b["pixel_values"] for b in batch]
     max_h = max(t.shape[1] for t in pv)
     max_w = max(t.shape[2] for t in pv)
@@ -127,78 +114,107 @@ def _collate(batch):
     return {
         "pixel_values": torch.stack(padded),
         "labels": [b["labels"] for b in batch],
+        "orig_sizes": torch.tensor([[b["orig_h"], b["orig_w"]] for b in batch]),
         "files": [b["file"] for b in batch],
     }
 
 
-class RTDetrWithCGFM(nn.Module):
-    """Оборачивает HuggingFace RTDetrForObjectDetection, добавляя FiLM-слои
-    на выходы encoder (hidden_states на 3 масштабах)."""
+def install_cgfm_hooks(model, context_encoder, device):
+    """Регистрирует forward_hook на RTDetrConvEncoder, модифицирующий feature maps.
+    Контекст сохраняется в model._ctx_holder через обёртку forward."""
 
-    def __init__(self, base_model, context_encoder, film_channels):
+    # Dry-run backbone для определения каналов
+    bb = model.model.backbone
+    # HF RTDetrConvEncoder.forward(pixel_values, pixel_mask)
+    # Создадим dummy pixel_mask
+    pm = torch.ones(1, 640, 640, dtype=torch.long, device=device)
+    pv = torch.randn(1, 3, 640, 640, device=device)
+    model.eval()
+    with torch.no_grad():
+        try:
+            bb_out = bb(pv, pm)
+        except Exception as e:
+            print(f"[warn] backbone probe with pixel_mask failed: {e}")
+            try:
+                bb_out = bb(pv)
+            except Exception as e2:
+                raise RuntimeError(f"backbone probe failed: {e2}")
+
+    # bb_out — обычно список tuples (features, mask)
+    channels = []
+    if isinstance(bb_out, (list, tuple)):
+        for item in bb_out:
+            if isinstance(item, (list, tuple)) and len(item) > 0 and hasattr(item[0], "shape"):
+                channels.append(item[0].shape[1])
+            elif hasattr(item, "shape"):
+                channels.append(item.shape[1])
+    elif hasattr(bb_out, "feature_maps"):
+        channels = [f.shape[1] for f in bb_out.feature_maps]
+
+    print(f"[cgfm] backbone channels: {channels}")
+    if not channels:
+        raise RuntimeError(f"cannot determine channels; bb_out type {type(bb_out)}")
+
+    # Создаём FiLM-слои
+    film_layers = nn.ModuleList([
+        FiLMLayer(context_dim=CTX_DIM, feature_channels=c) for c in channels
+    ]).to(device)
+
+    # holder для контекста
+    model._cgfm = {"context": None, "films": film_layers,
+                   "context_encoder": context_encoder}
+
+    def hook(module, inputs, output):
+        c = model._cgfm["context"]
+        if c is None:
+            return output
+        films = model._cgfm["films"]
+        # output — список tuples (features, mask)
+        if isinstance(output, (list, tuple)):
+            new_out = []
+            for i, item in enumerate(output):
+                if isinstance(item, (list, tuple)) and len(item) >= 1 and hasattr(item[0], "shape") and item[0].ndim == 4:
+                    mod = films[i](item[0], c)
+                    rest = item[1:]
+                    new_out.append((mod, *rest))
+                elif hasattr(item, "shape") and item.ndim == 4:
+                    new_out.append(films[i](item, c))
+                else:
+                    new_out.append(item)
+            # сохранить тип
+            if isinstance(output, tuple):
+                return tuple(new_out)
+            return new_out
+        return output
+
+    handle = bb.register_forward_hook(hook)
+    return film_layers, handle
+
+
+class CGFMWrapper(nn.Module):
+    def __init__(self, base_model, context_encoder, device):
         super().__init__()
         self.base = base_model
         self.context_encoder = context_encoder
-        self.film_layers = nn.ModuleList([
-            FiLMLayer(context_dim=CTX_DIM, feature_channels=c) for c in film_channels
-        ])
-        self._install_hooks()
+        self.film_layers, self.hook_handle = install_cgfm_hooks(base_model, context_encoder, device)
+        # register in parameters
+        for m in [context_encoder, self.film_layers]:
+            for n, p in m.named_parameters():
+                self.register_parameter("__" + n.replace(".", "_"), p) if False else None
+        # nn.Module уже регистрирует submodules — ok
 
-    def _install_hooks(self):
-        """Регистрирует forward_pre_hook на decoder, заменяющий encoder_hidden_states.
-
-        RT-DETR HuggingFace:
-          model.model.encoder.forward(...) → (last_hidden_state, ...)
-          Затем в model.model.decoder принимаются encoder outputs
-
-        Простейший способ: пропатчить model.model.encoder.forward, чтобы
-        применить FiLM к проекциям (outputs). Это зависит от версии HF.
-        Попробуем патчить RTDetrHybridEncoder.forward через wrapping.
-        """
-        enc = self.base.model.encoder
-        orig_forward = enc.forward
-        film_layers = self.film_layers
-        get_ctx = self._get_context_from_input
-
-        def new_forward(inputs_embeds=None, attention_mask=None, *args, **kwargs):
-            out = orig_forward(
-                inputs_embeds=inputs_embeds, attention_mask=attention_mask,
-                *args, **kwargs,
-            )
-            # out.last_hidden_state — [B, sum(H*W per level), hidden_dim] (flat)
-            # Для модуляции нужны 3 уровня (P3/P4/P5 после hybrid encoder).
-            # В BaseModelOutput есть hidden_states tuple — попробуем оттуда
-            c = get_ctx()
-            if c is None:
-                return out
-            # Если out — BaseModelOutput: последний hidden_state — [B, N, D].
-            # Нам нужны многоуровневые карты. Посмотрим, есть ли у encoder
-            # атрибут 'fpn_states' (HF не гарантирует, это fallback).
-            # Без успеха — сохраним out без модификации; FiLM применим к
-            # decoder-входам на следующем этапе.
-            return out
-
-        enc.forward = new_forward
-        # Простой вариант: модулировать backbone multi-scale features
-        # через wrapping model.model.backbone_projector или аналогичного
-        # модуля. Используем обёртку на проекционные слои.
-        # Fallback: FiLM работает на features после проекции.
-
-    def _get_context_from_input(self):
-        """Должен быть установлен внешне перед forward."""
-        return getattr(self, "_last_context", None)
-
-    def forward(self, pixel_values, labels=None, **kwargs):
-        # 1. контекст
+    def forward(self, pixel_values, labels=None, **kw):
+        # контекст на 224x224
         x_ctx = F.interpolate(pixel_values.float(), size=(224, 224),
                               mode="bilinear", align_corners=False)
-        self._last_context = self.context_encoder(x_ctx)
-        # 2. forward базовой модели
-        return self.base(pixel_values=pixel_values, labels=labels, **kwargs)
+        self.base._cgfm["context"] = self.context_encoder(x_ctx)
+        try:
+            return self.base(pixel_values=pixel_values, labels=labels, **kw)
+        finally:
+            self.base._cgfm["context"] = None
 
 
-def compute_map(preds, targets, image_sizes):
-    """preds/targets в COCO-стиле → torchmetrics MeanAveragePrecision."""
+def compute_map(preds, targets):
     from torchmetrics.detection import MeanAveragePrecision
     metric = MeanAveragePrecision(iou_type="bbox", class_metrics=True)
     metric.update(preds, targets)
@@ -209,14 +225,12 @@ def main():
     args = parse_args()
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
-
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    run_name = args.name or (f"rtdetr_{args.variant}")
+    run_name = args.name or f"rtdetr_{args.variant}"
     run_dir = Path(args.out) / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
     print(f"[run] {run_dir}  device={device}")
 
-    # --- Processor + Model
     from transformers import RTDetrImageProcessor, RTDetrForObjectDetection
     processor = RTDetrImageProcessor.from_pretrained(args.checkpoint)
     base = RTDetrForObjectDetection.from_pretrained(
@@ -225,37 +239,15 @@ def main():
         id2label={i: n for i, n in enumerate(CLASS_NAMES)},
         label2id={n: i for i, n in enumerate(CLASS_NAMES)},
         ignore_mismatched_sizes=True,
-    )
+    ).to(device)
 
-    # --- CGFM интеграция (упрощённый подход):
-    #    Вставляем FiLM не через HF internals (это хрупко и зависит от версии
-    #    transformers), а через обёртку backbone-модели: после backbone
-    #    получаем multi-scale features, модулируем их FiLM, отдаём дальше.
     if args.variant == "cgfm":
-        # Определим каналы выходов backbone
-        base.eval()
-        with torch.no_grad():
-            dummy = torch.randn(1, 3, 640, 640)
-            # backbone RT-DETR (ResNet-like) возвращает list of feature maps
-            try:
-                bb = base.model.backbone
-                feats = bb(dummy)
-                if hasattr(feats, 'feature_maps'):
-                    feats = feats.feature_maps
-                elif isinstance(feats, dict):
-                    feats = list(feats.values())
-                channels = [f.shape[1] for f in feats]
-            except Exception as e:
-                print(f"[warn] backbone probe failed: {e}; using default [512,1024,2048]")
-                channels = [512, 1024, 2048]
-        print(f"[cgfm] backbone out channels: {channels}")
-
-        ctx_enc = ContextEncoder(args.encoder, out_dim=CTX_DIM, pretrained=True)
-        model = RTDetrWithCGFMWrapped(base, ctx_enc, channels).to(device)
+        ctx_enc = ContextEncoder(args.encoder, out_dim=CTX_DIM, pretrained=True).to(device)
+        model = CGFMWrapper(base, ctx_enc, device).to(device)
     else:
-        model = base.to(device)
+        model = base
 
-    # --- Dataset
+    # Dataset
     root = Path(args.data)
     ds_train = YoloDataset(root, "train", processor)
     ds_val = YoloDataset(root, "val", processor)
@@ -264,14 +256,18 @@ def main():
 
     dl_train = torch.utils.data.DataLoader(
         ds_train, batch_size=args.batch, shuffle=True,
-        collate_fn=_collate, num_workers=args.num_workers, pin_memory=True,
+        collate_fn=collate, num_workers=args.num_workers, pin_memory=True,
     )
     dl_val = torch.utils.data.DataLoader(
         ds_val, batch_size=args.batch, shuffle=False,
-        collate_fn=_collate, num_workers=args.num_workers, pin_memory=True,
+        collate_fn=collate, num_workers=args.num_workers,
+    )
+    dl_test = torch.utils.data.DataLoader(
+        ds_test, batch_size=args.batch, shuffle=False,
+        collate_fn=collate, num_workers=args.num_workers,
     )
 
-    # --- Optimizer with different lr for new params
+    # Optimizer
     if args.variant == "cgfm":
         new_params = [p for n, p in model.named_parameters()
                       if "context_encoder" in n or "film_layers" in n]
@@ -284,18 +280,20 @@ def main():
     else:
         optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-4)
 
-    # --- Training loop
+    # Training
+    history = []
     best_val = 1e9
     no_improve = 0
-    history = []
     t0 = time.time()
+    # Отключаем AMP — FiLM модуляция в fp16 приводит к NaN.
+    scaler = None
 
     for epoch in range(args.epochs):
-        # Warm-up: первые warmup_epochs эпох — только FiLM + context_encoder
+        # warmup: первые warmup_epochs эпох — только film + context_encoder
         if args.variant == "cgfm" and epoch < args.warmup_epochs:
             for n, p in model.named_parameters():
                 p.requires_grad = ("context_encoder" in n or "film_layers" in n)
-        elif epoch == args.warmup_epochs:
+        elif epoch == args.warmup_epochs and args.variant == "cgfm":
             for p in model.parameters():
                 p.requires_grad = True
 
@@ -308,6 +306,9 @@ def main():
             optimizer.zero_grad()
             out = model(pixel_values=pv, labels=labels)
             loss = out.loss
+            if torch.isnan(loss) or torch.isinf(loss):
+                print(f"[warn] nan/inf loss at epoch {epoch+1} batch {n_b}, skipping")
+                continue
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
@@ -315,7 +316,7 @@ def main():
             n_b += 1
         tr_loss /= max(n_b, 1)
 
-        # Val
+        # Val loss
         model.eval()
         va_loss = 0.0
         n_vb = 0
@@ -327,58 +328,49 @@ def main():
                 va_loss += out.loss.item()
                 n_vb += 1
         va_loss /= max(n_vb, 1)
-        history.append({"epoch": epoch + 1, "train_loss": tr_loss, "val_loss": va_loss})
+
         elapsed = (time.time() - t0) / 60
         print(f"epoch {epoch+1:3d}/{args.epochs}  tr {tr_loss:.4f}  va {va_loss:.4f}  "
-              f"elapsed {elapsed:.1f}m")
+              f"elapsed {elapsed:.1f}m", flush=True)
+        history.append({"epoch": epoch + 1, "train_loss": tr_loss, "val_loss": va_loss})
+        pd.DataFrame(history).to_csv(run_dir / "metrics.csv", index=False)
 
-        # Save
         if va_loss < best_val - 1e-4:
             best_val = va_loss
             no_improve = 0
-            torch.save({
-                "state_dict": model.state_dict(),
-                "epoch": epoch + 1,
-                "val_loss": va_loss,
-            }, run_dir / "best.pt")
+            # save only state_dict (weights saved as best.pt for consistency)
+            torch.save({"state_dict": model.state_dict(),
+                        "epoch": epoch + 1, "val_loss": va_loss},
+                       run_dir / "best.pt")
         else:
             no_improve += 1
             if no_improve >= args.patience:
-                print(f"early stop at epoch {epoch+1}")
+                print(f"early stop at epoch {epoch+1}", flush=True)
                 break
 
-        pd.DataFrame(history).to_csv(run_dir / "metrics.csv", index=False)
-
-    # --- Final metrics на test
-    print("[eval] test")
-    ckpt = torch.load(run_dir / "best.pt", weights_only=False, map_location=device)
-    model.load_state_dict(ckpt["state_dict"])
+    # Final eval on test
+    print("[eval] test set", flush=True)
+    if (run_dir / "best.pt").exists():
+        ckpt = torch.load(run_dir / "best.pt", weights_only=False, map_location=device)
+        model.load_state_dict(ckpt["state_dict"])
     model.eval()
 
     from torchmetrics.detection import MeanAveragePrecision
     metric = MeanAveragePrecision(iou_type="bbox", class_metrics=True)
-    dl_test = torch.utils.data.DataLoader(
-        ds_test, batch_size=args.batch, shuffle=False,
-        collate_fn=_collate, num_workers=args.num_workers,
-    )
     with torch.no_grad():
         for batch in dl_test:
             pv = batch["pixel_values"].to(device)
-            orig_sizes = torch.tensor([[img.size[1], img.size[0]] for img in
-                                       [_open(f) for f in batch["files"]]]).to(device)
+            orig_sizes = batch["orig_sizes"].to(device)
             out = model(pixel_values=pv)
             results = processor.post_process_object_detection(
-                out, target_sizes=orig_sizes, threshold=0.0,
+                out, target_sizes=orig_sizes.float(), threshold=0.0,
             )
-            # labels → в пиксельных размерах исходного изображения
+            # targets конвертируем из HF-формата
             targets = []
             for l, sz in zip(batch["labels"], orig_sizes):
                 h, w = sz.cpu().tolist()
-                boxes_xywh = l["boxes"].cpu()
-                # HF сохраняет boxes в нормализованном cxcywh → конвертируем
-                if boxes_xywh.numel():
-                    cxcywh = boxes_xywh
-                    # Some processors normalize; detect range
+                cxcywh = l["boxes"].cpu()
+                if cxcywh.numel():
                     x1 = (cxcywh[:, 0] - cxcywh[:, 2] / 2) * w
                     y1 = (cxcywh[:, 1] - cxcywh[:, 3] / 2) * h
                     x2 = (cxcywh[:, 0] + cxcywh[:, 2] / 2) * w
@@ -391,94 +383,31 @@ def main():
                       "labels": r["labels"].cpu()} for r in results]
             metric.update(preds, targets)
     res = metric.compute()
-    print(f"[eval] mAP@50 = {res['map_50']:.4f}  mAP@50-95 = {res['map']:.4f}")
-
+    print(f"[eval] mAP@50={res['map_50']:.4f}  mAP@50-95={res['map']:.4f}", flush=True)
     with open(run_dir / "test_metrics.json", "w") as f:
         json.dump({k: (v.tolist() if hasattr(v, "tolist") else v) for k, v in res.items()},
                   f, indent=2)
 
-    # per-class mAP
-    per_class = res.get("map_per_class", None)
-    if per_class is not None and hasattr(per_class, "tolist"):
-        pc = per_class.tolist()
+    # per_class
+    pc = res.get("map_per_class", None)
+    if pc is not None and hasattr(pc, "tolist"):
+        pcl = pc.tolist()
         pd.DataFrame({
-            "class_id": list(range(len(pc))),
-            "class_name": CLASS_NAMES[:len(pc)],
-            "mAP@50": pc,
+            "class_id": list(range(len(pcl))),
+            "class_name": CLASS_NAMES[:len(pcl)],
+            "mAP@50": pcl,
         }).to_csv(run_dir / "per_class_map.csv", index=False)
 
-    # summary
     row = {
         "config": run_name,
         "detector": "rtdetr",
         "mAP@50": float(res["map_50"]),
         "mAP@50-95": float(res["map"]),
-        "best_epoch": ckpt["epoch"],
     }
-    pd.DataFrame([row]).to_csv(Path(args.out) / "summary.csv", index=False, mode="a",
-                                header=not (Path(args.out) / "summary.csv").exists())
-    print("[done]")
-
-
-def _open(path):
-    from PIL import Image
-    return Image.open(path).convert("RGB")
-
-
-# --- Упрощённая обёртка для RT-DETR, модулирующая backbone-проекции.
-class RTDetrWithCGFMWrapped(nn.Module):
-    def __init__(self, base_model, context_encoder, channels):
-        super().__init__()
-        self.base = base_model
-        self.context_encoder = context_encoder
-        self.film_layers = nn.ModuleList([
-            FiLMLayer(context_dim=CTX_DIM, feature_channels=c) for c in channels
-        ])
-        self._install_backbone_hook()
-
-    def _install_backbone_hook(self):
-        """Оборачивает backbone.forward: модулирует каждую feature map FiLM-ом."""
-        bb = self.base.model.backbone
-        orig_forward = bb.forward
-        films = self.film_layers
-
-        def new_forward(pixel_values, *args, **kwargs):
-            out = orig_forward(pixel_values, *args, **kwargs)
-            c = getattr(self, "_ctx_vec", None)
-            if c is None:
-                return out
-            # out может быть BaseModelOutput или tuple of feature maps
-            # Для RT-DETR HF: backbone возвращает `RTDetrFrozenBatchNorm2dBackboneOutput`
-            # или `BaseModelOutput` с `.feature_maps`
-            fmaps = None
-            if hasattr(out, "feature_maps"):
-                fmaps = list(out.feature_maps)
-            elif isinstance(out, (list, tuple)):
-                fmaps = list(out)
-            elif isinstance(out, dict):
-                fmaps = list(out.values())
-            if fmaps is None:
-                return out
-            for i, fl in enumerate(films):
-                if i < len(fmaps):
-                    fmaps[i] = fl(fmaps[i], c)
-            if hasattr(out, "feature_maps"):
-                out.feature_maps = tuple(fmaps)
-            elif isinstance(out, tuple):
-                out = tuple(fmaps)
-            elif isinstance(out, list):
-                out = fmaps
-            elif isinstance(out, dict):
-                out = {k: v for k, v in zip(out.keys(), fmaps)}
-            return out
-
-        bb.forward = new_forward
-
-    def forward(self, pixel_values, labels=None, **kwargs):
-        x_ctx = F.interpolate(pixel_values.float(), size=(224, 224),
-                              mode="bilinear", align_corners=False)
-        self._ctx_vec = self.context_encoder(x_ctx)
-        return self.base(pixel_values=pixel_values, labels=labels, **kwargs)
+    summary_path = Path(args.out) / "summary.csv"
+    pd.DataFrame([row]).to_csv(summary_path, index=False, mode="a",
+                                header=not summary_path.exists())
+    print("[done]", flush=True)
 
 
 if __name__ == "__main__":

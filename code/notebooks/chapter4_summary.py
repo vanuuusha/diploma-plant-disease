@@ -84,9 +84,21 @@ def read_param_count(path: Path) -> dict | None:
 
 def collect_run(run_dir: Path, config_name: str) -> dict | None:
     row = {"config": config_name}
+    # Ultralytics results.csv
     m = read_metrics_csv(run_dir / "results.csv") or read_metrics_csv(run_dir / "metrics.csv")
     if m:
         row.update(m)
+    # HF-style test_metrics.json (RT-DETR + Late Fusion)
+    tm = run_dir / "test_metrics.json"
+    if tm.exists():
+        try:
+            with open(tm) as f:
+                d = json.load(f)
+            if "mAP@50" not in row:  # приоритет Ultralytics, если есть
+                row["mAP@50"] = d.get("map_50") or d.get("mAP50")
+                row["mAP@50-95"] = d.get("map") or d.get("mAP50-95")
+        except Exception:
+            pass
     fps = read_fps_json(run_dir / "fps_measurement.json")
     if fps:
         row.update(fps)
@@ -108,8 +120,10 @@ def collect_all_runs() -> pd.DataFrame:
         ("code/results/task_16/yolov12_cgfm_abl_p3only", "yolov12_cgfm_abl_p3only"),
         ("code/results/task_16/yolov12_cgfm_abl_effb0", "yolov12_cgfm_abl_effb0"),
         ("code/results/task_16/yolov12_cgfm_abl_vittiny", "yolov12_cgfm_abl_vittiny"),
-        ("code/results/task_17/rtdetr_baseline", "rtdetr_baseline"),
+        ("code/results/task_08/rtdetr_aug_diffusion", "rtdetr_baseline"),
         ("code/results/task_17/rtdetr_cgfm", "rtdetr_cgfm"),
+        ("code/results/task_14/yolov12_late_fusion", "yolov12_late_fusion"),
+        ("code/results/task_15/yolov12_cgfm_v2", "yolov12_cgfm_v2"),
     ]
     rows = []
     for path, name in configs:
@@ -154,8 +168,9 @@ def transferability_table(df: pd.DataFrame):
 
 def configs_barplot(df: pd.DataFrame):
     configs = ["yolov12_baseline", "yolov12_se_neck", "yolov12_cbam_neck",
-               "yolov12_late_fusion", "yolov12_cgfm", "yolov12_cgfm_late"]
-    sub = df[df["config"].isin(configs)].set_index("config").reindex(configs).dropna(subset=["mAP@50"])
+               "yolov12_late_fusion", "yolov12_cgfm", "yolov12_cgfm_v2"]
+    df_u = df.drop_duplicates(subset=["config"], keep="first")
+    sub = df_u[df_u["config"].isin(configs)].set_index("config").reindex(configs).dropna(subset=["mAP@50"])
     if sub.empty:
         return
     fig, ax = plt.subplots(figsize=(10, 5))

@@ -1,0 +1,2 @@
+config,mAP50,mAP50-95,test_rois,train_rois,val_rois
+yolov12_late_fusion,0.288281112909317,0.18611158430576324,582,34186,1242

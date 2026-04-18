@@ -131,18 +131,29 @@ def train(args, y, info, context_encoder):
         close_mosaic=0, erasing=0.0, crop_fraction=1.0,
     )
 
-    # Warm-up для CGFM
+    # Warm-up: через Ultralytics callback on_train_epoch_start
+    # (двойной .train() ломается в Ultralytics 8.3.240 — KeyError 'model').
     if args.config == "cgfm" and not args.skip_warmup and args.warmup_epochs > 0:
-        print(f"[stage-1] warm-up: {args.warmup_epochs} эпох, детектор заморожен")
+        print(f"[stage-1→2] warm-up {args.warmup_epochs} эпох (FiLM+ctx only), "
+              f"затем end-to-end до {args.epochs} эпох")
+        # заморозим сразу
         freeze_detector_except_modulation(y, info, context_encoder)
-        y.train(epochs=args.warmup_epochs, patience=args.warmup_epochs, **common)
-        # Reload best веса из warm-up и продолжить end-to-end
-        print("[stage-2] end-to-end")
-        unfreeze_all(y)
-        remaining = max(args.epochs - args.warmup_epochs, 1)
-        y.train(epochs=remaining, patience=args.patience, **common)
-    else:
-        y.train(epochs=args.epochs, patience=args.patience, **common)
+        _wu = args.warmup_epochs
+
+        def _unfreeze_cb(trainer):
+            if trainer.epoch == _wu:
+                print(f"[stage-2] unfreezing detector at epoch {trainer.epoch}", flush=True)
+                for p in trainer.model.parameters():
+                    p.requires_grad = True
+                # пересобрать optimizer с новыми params
+                trainer.optimizer = trainer.build_optimizer(
+                    model=trainer.model, name=trainer.args.optimizer,
+                    lr=trainer.args.lr0, momentum=trainer.args.momentum,
+                    decay=trainer.args.weight_decay, iterations=trainer.args.epochs,
+                ) if hasattr(trainer, "build_optimizer") else trainer.optimizer
+
+        y.add_callback("on_train_epoch_start", _unfreeze_cb)
+    y.train(epochs=args.epochs, patience=args.patience, **common)
 
     return Path(args.out) / run_name
 

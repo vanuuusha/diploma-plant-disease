@@ -13,13 +13,18 @@ def test_shape():
     assert y.shape == f.shape
 
 
-def test_identity_at_init():
-    """С нулевым β и γ-инициализацией близко к 0 (→ σ≈0.5) F' ≈ 0.5·F."""
+def test_near_identity_at_init():
+    """γ=1+0.5·tanh(Wc+b), W~N(0, 0.05) → γ ≈ 1 + шум ~0.05.
+    При нулевом контексте: W·0 = 0 → γ = 1 + 0.5·tanh(0) = 1, β = 0."""
     film = FiLMLayer(context_dim=256, feature_channels=8)
     f = torch.randn(1, 8, 4, 4)
-    c = torch.zeros(1, 256)  # если context нулевой → γ=σ(0)=0.5, β=0
+    c = torch.zeros(1, 256)  # zero context → Wc = 0 → γ=1, β=0
     y = film(f, c)
-    assert torch.allclose(y, 0.5 * f, atol=1e-6)
+    assert torch.allclose(y, f, atol=1e-5)
+    # С нормальным контекстом γ близко к 1, но не точно
+    c2 = torch.randn(1, 256)
+    g = film.last_gamma(c2)
+    assert (g > 0.5).all() and (g < 1.5).all()
 
 
 def test_gradients_flow():
@@ -39,7 +44,7 @@ def test_last_gamma_shape():
     c = torch.randn(3, 64)
     g = film.last_gamma(c)
     assert g.shape == (3, 32)
-    assert (g >= 0).all() and (g <= 1).all()
+    assert (g >= 0).all() and (g <= 2).all()
 
 
 if __name__ == "__main__":
