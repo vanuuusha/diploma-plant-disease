@@ -166,9 +166,9 @@ def main():
     fig, ax = plt.subplots(figsize=(10, 6))
     bins = np.arange(0, n_bbox_per_img.max() + 2) - 0.5
     ax.hist(n_bbox_per_img, bins=bins, color=sns.color_palette("Set2")[0], edgecolor="black")
-    ax.set_xlabel("Число bbox на изображение")
+    ax.set_xlabel("Число ограничивающих рамок на изображение")
     ax.set_ylabel("Число изображений")
-    ax.set_title("Распределение числа bbox на изображение")
+    ax.set_title("Распределение числа ограничивающих рамок на изображение")
     save(fig, "bbox_per_image.png")
 
     # 3.4 Размеры bbox scatter
@@ -178,9 +178,9 @@ def main():
     for cid in sorted(set(cids.tolist())):
         m = cids == cid
         ax.scatter(arr[m, 3], arr[m, 4], s=4, alpha=0.4, label=classes[cid], color=palette[cid])
-    ax.set_xlabel("Ширина bbox (норм.)")
-    ax.set_ylabel("Высота bbox (норм.)")
-    ax.set_title("Размеры bbox (нормализованные)")
+    ax.set_xlabel("Относительная ширина рамки")
+    ax.set_ylabel("Относительная высота рамки")
+    ax.set_title("Распределение размеров ограничивающих рамок")
     ax.legend(bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=8, markerscale=2)
     save(fig, "bbox_sizes.png")
 
@@ -188,10 +188,10 @@ def main():
     H, xedges, yedges = np.histogram2d(arr[:, 1], arr[:, 2], bins=50, range=[[0, 1], [0, 1]])
     fig, ax = plt.subplots(figsize=(8, 8))
     im = ax.imshow(H.T, origin="lower", extent=[0, 1, 0, 1], cmap="hot", aspect="equal")
-    ax.set_xlabel("x_center (норм.)")
-    ax.set_ylabel("y_center (норм.)")
-    ax.set_title("Тепловая карта центров bbox")
-    plt.colorbar(im, ax=ax, label="Число bbox")
+    ax.set_xlabel("Координата центра X (норм.)")
+    ax.set_ylabel("Координата центра Y (норм.)")
+    ax.set_title("Тепловая карта центров ограничивающих рамок")
+    plt.colorbar(im, ax=ax, label="Число рамок")
     save(fig, "bbox_heatmap.png")
 
     # 3.6 Разрешения
@@ -259,8 +259,8 @@ def main():
             labels_box.append(classes[cid])
     ax.boxplot(data_box, labels=labels_box)
     ax.set_yscale("log")
-    ax.set_ylabel("Площадь bbox (норм., log)")
-    ax.set_title("Распределение площадей bbox по классам")
+    ax.set_ylabel("Относительная площадь рамки (лог. шкала)")
+    ax.set_title("Распределение площадей ограничивающих рамок по классам")
     plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
     save(fig, "bbox_area_by_class.png")
 

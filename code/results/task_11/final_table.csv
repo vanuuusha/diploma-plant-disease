@@ -1,5 +1,5 @@
 detector,best_variant,mAP50,mAP5095,precision,recall,fps,params_M
 yolov12,aug_diffusion,0.651,0.365,0.82,0.7,20.36,20.1
 rtdetr,aug_diffusion,0.635,0.353,0.8,0.686,17.99,32.0
-faster_rcnn,aug_diffusion,0.558,0.2983,0.3734,0.7657,30.74,43.3
-detr,baseline,0.5048,0.2651,0.3145,0.7422,64.03,41.3
+faster_rcnn,aug_diffusion,0.558,0.298329215896885,0.3733984962406015,0.7656766917293234,30.74,43.3
+detr,baseline,0.50475,0.26505,0.31455,0.7422,64.03,41.3

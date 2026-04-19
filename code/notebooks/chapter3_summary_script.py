@@ -180,11 +180,12 @@ def qualitative_grid():
             else:
                 ax.text(0.5, 0.5, "нет", ha="center", va="center", transform=ax.transAxes)
             ax.set_xticks([]); ax.set_yticks([])
+            det_labels = {"yolov12": "YOLOv12", "rtdetr": "RT-DETR", "faster_rcnn": "Faster R-CNN", "detr": "DETR"}
             if i == 0:
-                ax.set_title(det, fontsize=11)
+                ax.set_title(det_labels.get(det, det), fontsize=11)
             if j == 0:
-                ax.set_ylabel(fname, fontsize=9, rotation=0, labelpad=35, ha="right")
-    fig.suptitle("Качественное сравнение: 9 тестовых изображений × 4 детектора (aug_diffusion)", fontsize=13)
+                ax.set_ylabel(f"Снимок {i+1}", fontsize=9, rotation=0, labelpad=35, ha="right")
+    fig.suptitle("Качественное сравнение предсказаний четырёх детекторов", fontsize=13)
     fig.tight_layout()
     fig.savefig(OUT_DIR / "qualitative_grid.png", dpi=100, bbox_inches="tight")
     plt.close(fig)

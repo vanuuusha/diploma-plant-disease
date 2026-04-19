@@ -2,14 +2,14 @@
   "top2": {
     "yolov12": {
       "mAP50": 0.651,
-      "ci_low": 0.593,
-      "ci_high": 0.709,
+      "ci_low": 0.5662445143383285,
+      "ci_high": 0.803602960443364,
       "method": "per-class bootstrap (n=1000, 9 classes) — приблизительная оценка"
     },
     "rtdetr": {
       "mAP50": 0.635,
-      "ci_low": 0.575,
-      "ci_high": 0.695,
+      "ci_low": 0.5457569512989721,
+      "ci_high": 0.7551996973202426,
       "method": "per-class bootstrap (n=1000, 9 classes) — приблизительная оценка"
     }
   },

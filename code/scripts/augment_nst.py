@@ -178,7 +178,7 @@ def main():
         fig, axes = plt.subplots(n, 3, figsize=(12, 4 * n))
         if n == 1: axes = axes[None, :]
         for r, (cid, cp, sp, op) in enumerate(examples):
-            for col, (path, title) in enumerate([(cp, "content"), (sp, f"style ({classes[cid]})"), (op, "результат NST")]):
+            for col, (path, title) in enumerate([(cp, "Изображение-содержание"), (sp, f"Стиль ({classes[cid]})"), (op, "Результат переноса стиля")]):
                 axes[r, col].imshow(Image.open(path).convert("RGB").resize((SIZE, SIZE)))
                 axes[r, col].set_title(title); axes[r, col].axis("off")
         fig.tight_layout()

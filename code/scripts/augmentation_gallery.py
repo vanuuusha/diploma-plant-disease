@@ -116,6 +116,29 @@ def draw_bboxes(img, bboxes, color=(255, 0, 0)):
 
 
 def main():
+    AUG_TITLES = {
+        "01_HorizontalFlip": "Горизонтальное отражение",
+        "02_VerticalFlip": "Вертикальное отражение",
+        "03_RandomRotate90": "Поворот на 90°",
+        "04_Affine": "Аффинное преобразование",
+        "05_RandomResizedCrop": "Случайная обрезка",
+        "06_RandomBrightnessContrast": "Яркость и контраст",
+        "07_HueSaturationValue": "Оттенок и насыщенность",
+        "08_GaussianBlur": "Гауссово размытие",
+        "09_GaussNoise": "Гауссов шум",
+        "10_CLAHE": "Адаптивное выравнивание (CLAHE)",
+        "11_RandomShadow": "Случайная тень",
+        "12_RandomFog": "Туман",
+        "13_ImageCompression": "JPEG-сжатие",
+        "14_ElasticTransform": "Эластичная деформация",
+        "15_GridDistortion": "Деформация сетки",
+        "16_RandomToneCurve": "Тоновая кривая",
+        "17_Sharpen": "Повышение резкости",
+        "18_ChannelShuffle": "Перестановка каналов",
+        "19_RGBShift": "Сдвиг RGB",
+        "20_MotionBlur": "Размытие движением",
+    }
+
     if os.path.isdir(OUT):
         shutil.rmtree(OUT)
     os.makedirs(OUT, exist_ok=True)
@@ -176,7 +199,7 @@ def main():
                     axes[r, v + 1].text(0.5, 0.5, f"err\n{e}", ha="center", va="center", transform=axes[r, v + 1].transAxes)
                 axes[r, v + 1].set_title(f"вариант {v + 1}", fontsize=10)
                 axes[r, v + 1].axis("off")
-        fig.suptitle(aug_name, fontsize=14, y=1.0)
+        fig.suptitle(AUG_TITLES.get(aug_name, aug_name), fontsize=14, y=1.0)
         fig.tight_layout()
         fig.savefig(os.path.join(OUT, aug_name + ".png"), dpi=200, bbox_inches="tight")
         plt.close(fig)
@@ -203,7 +226,8 @@ def main():
                     axes[r, v + 1].text(0.5, 0.5, f"err\n{e}", ha="center", va="center", transform=axes[r, v + 1].transAxes)
                 axes[r, v + 1].set_title(f"вариант {v + 1}", fontsize=10)
                 axes[r, v + 1].axis("off")
-        fig.suptitle(pname, fontsize=14, y=1.0)
+        pipe_titles = {"PIPELINE_classic": "Классический пайплайн аугментации", "PIPELINE_aggressive": "Агрессивный пайплайн аугментации"}
+        fig.suptitle(pipe_titles.get(pname, pname), fontsize=14, y=1.0)
         fig.tight_layout()
         fig.savefig(os.path.join(OUT, pname + ".png"), dpi=200, bbox_inches="tight")
         plt.close(fig)
@@ -230,7 +254,7 @@ def main():
     axes = np.array(axes).reshape(-1)
     for i, (name, im, bb) in enumerate(items):
         axes[i].imshow(draw_bboxes(im, bb))
-        axes[i].set_title(name.replace("_", " "), fontsize=9)
+        axes[i].set_title(AUG_TITLES.get(name, name.replace("_", " ")), fontsize=9)
         axes[i].axis("off")
     for j in range(n, len(axes)):
         axes[j].axis("off")

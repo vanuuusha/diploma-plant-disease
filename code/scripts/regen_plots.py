@@ -120,6 +120,9 @@ def regen_all_ultralytics():
 
 def regen_task11_chapter3_plots():
     """Delta heatmap, speed-accuracy scatter, per_class_contribution."""
+    VARIANT_LABELS = {"baseline": "Базовый", "aug_geom": "Классическая аугм.", "aug_oversample": "Oversampling", "aug_diffusion": "Генеративная аугм."}
+    DETECTOR_LABELS = {"yolov12": "YOLOv12", "rtdetr": "RT-DETR", "faster_rcnn": "Faster R-CNN", "detr": "DETR"}
+
     grand = pd.read_csv(ROOT / "task_11" / "chapter3_grand_summary.csv")
 
     # Delta heatmap (prirost ot baseline)
@@ -132,9 +135,9 @@ def regen_task11_chapter3_plots():
     im = ax.imshow(delta.values, cmap="RdYlGn", aspect="auto",
                    vmin=-0.05, vmax=0.05)
     ax.set_xticks(range(len(variant_order)))
-    ax.set_xticklabels(variant_order)
+    ax.set_xticklabels([VARIANT_LABELS[v] for v in variant_order])
     ax.set_yticks(range(len(det_order)))
-    ax.set_yticklabels(det_order)
+    ax.set_yticklabels([DETECTOR_LABELS[d] for d in det_order])
     for i in range(len(det_order)):
         for j in range(len(variant_order)):
             v = delta.values[i, j]
@@ -160,9 +163,9 @@ def regen_task11_chapter3_plots():
                    color=colors[row["detector"]],
                    edgecolor="black", linewidth=0.8, alpha=0.85)
     # Легенды
-    det_handles = [plt.scatter([], [], color=c, s=100, label=d)
+    det_handles = [plt.scatter([], [], color=c, s=100, label=DETECTOR_LABELS.get(d, d))
                    for d, c in colors.items()]
-    var_handles = [plt.scatter([], [], marker=m, color="gray", s=100, label=v)
+    var_handles = [plt.scatter([], [], marker=m, color="gray", s=100, label=VARIANT_LABELS.get(v, v))
                    for v, m in markers.items()]
     leg1 = ax.legend(handles=det_handles, title="Детектор", loc="upper left")
     ax.add_artist(leg1)
@@ -197,11 +200,11 @@ def regen_task11_chapter3_plots():
             w = 0.2
             for i, v in enumerate(["baseline", "aug_geom", "aug_oversample", "aug_diffusion"]):
                 if v in pc_df.columns:
-                    ax.bar(x + (i - 1.5) * w, pc_df[v], w, label=v)
+                    ax.bar(x + (i - 1.5) * w, pc_df[v], w, label=VARIANT_LABELS.get(v, v))
             ax.set_xticks(x)
             ax.set_xticklabels(pc_df.index, rotation=25, ha="right", fontsize=9)
             ax.set_ylabel("mAP@50 по классам")
-            ax.set_title(f"{detector}: per-class mAP@50 по вариантам датасета")
+            ax.set_title(f"{DETECTOR_LABELS.get(detector, detector)}: mAP@50 по классам")
             ax.legend()
             ax.grid(True, alpha=0.3, axis="y")
             fig.tight_layout()

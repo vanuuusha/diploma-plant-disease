@@ -139,7 +139,7 @@ def main():
             for c in range(4):
                 if c < len(paths):
                     axes[r, c].imshow(Image.open(paths[c]).convert("RGB").resize((SIZE, SIZE)))
-                    axes[r, c].set_title(("seed " + classes[cid]) if c == 0 else f"diffusion {c}")
+                    axes[r, c].set_title(("Исходное: " + classes[cid]) if c == 0 else f"Генерация {c}")
                 axes[r, c].axis("off")
         fig.tight_layout()
         fig.savefig(os.path.join(OUT_DIR, "diffusion_examples.png"), dpi=200, bbox_inches="tight")

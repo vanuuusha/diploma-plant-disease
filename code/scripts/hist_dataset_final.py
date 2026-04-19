@@ -21,7 +21,7 @@ OUT_COMPARE = "/home/vanusha/diplom/diploma-plant-disease/code/results/dataset_p
 DATASETS = [
     ("dataset",           "1. Исходный"),
     ("dataset_augmented", "2. + Классическая аугментация (×3)"),
-    ("dataset_balanced",  "3. + Oversampling (task_05)"),
+    ("dataset_balanced",  "3. + Oversampling"),
     ("dataset_final",     "4. + Diffusion (итог)"),
 ]
 
@@ -65,7 +65,7 @@ def main():
     fig, ax = plt.subplots(figsize=(13, 7))
     bars = ax.barh(labels[::-1], vals[::-1], color=sns.color_palette("Set2", len(cls_ids))[::-1])
     ax.set_xlabel("Число аннотаций (train)", fontsize=12)
-    ax.set_title(f"Распределение классов в dataset_final ({final_label.split('. ', 1)[1]})", fontsize=13)
+    ax.set_title("Распределение классов в итоговой обучающей выборке", fontsize=13)
     for b, v in zip(bars, vals[::-1]):
         ax.text(v + max(vals) * 0.005, b.get_y() + b.get_height() / 2, str(v), va="center", fontsize=10)
     # Подпись: imbalance ratio
