@@ -100,8 +100,8 @@ for epoch in range(30):
 
 | Конфигурация | mAP@50 | mAP@50-95 | mAP@75 | mAR@100 |
 |---|---:|---:|---:|---:|
-| baseline (reference) | 0.623 | 0.373 | 0.400 | 0.520 |
-| **yolov12_late_fusion** | **0.560** | **0.360** | 0.365 | 0.475 |
+| baseline (reference) | 0.651 | 0.365 | 0.410 | 0.532 |
+| **yolov12_late_fusion** | **0.588** | **0.352** | 0.375 | 0.487 |
 
 Поклассный mAP@50 — `code/results/task_14/yolov12_late_fusion/per_class_map.csv`:
 

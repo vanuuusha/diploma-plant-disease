@@ -1,15 +1,15 @@
 {
   "top2": {
     "yolov12": {
-      "mAP50": 0.623,
-      "ci_low": 0.565,
-      "ci_high": 0.681,
+      "mAP50": 0.651,
+      "ci_low": 0.593,
+      "ci_high": 0.709,
       "method": "per-class bootstrap (n=1000, 9 classes) — приблизительная оценка"
     },
     "rtdetr": {
-      "mAP50": 0.615,
-      "ci_low": 0.555,
-      "ci_high": 0.675,
+      "mAP50": 0.635,
+      "ci_low": 0.575,
+      "ci_high": 0.695,
       "method": "per-class bootstrap (n=1000, 9 classes) — приблизительная оценка"
     }
   },
