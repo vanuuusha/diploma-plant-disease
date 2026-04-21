@@ -1,0 +1,181 @@
+{
+  "overall": [
+    {
+      "method": "real",
+      "n_images": 1500,
+      "n_pairs": 2000,
+      "lpips_mean": 0.6186631513983011,
+      "lpips_std": 0.12290798979171381
+    },
+    {
+      "method": "diffusion",
+      "n_images": 450,
+      "n_pairs": 2000,
+      "lpips_mean": 0.5427746832370758,
+      "lpips_std": 0.12276676529435167
+    },
+    {
+      "method": "nst_v1",
+      "n_images": 60,
+      "n_pairs": 500,
+      "lpips_mean": 0.5893603585064411,
+      "lpips_std": 0.12201977317463525
+    },
+    {
+      "method": "nst_v2",
+      "n_images": 32,
+      "n_pairs": 496,
+      "lpips_mean": 0.6588777615538528,
+      "lpips_std": 0.10811898091953447
+    }
+  ],
+  "per_class": [
+    {
+      "class": "root_rot",
+      "class_id": 5,
+      "method": "real",
+      "n_images": 501,
+      "n_pairs": 500,
+      "lpips_mean": 0.5333691740632057,
+      "lpips_std": 0.09264374974897176
+    },
+    {
+      "class": "root_rot",
+      "class_id": 5,
+      "method": "diffusion",
+      "n_images": 73,
+      "n_pairs": 500,
+      "lpips_mean": 0.4974575791358948,
+      "lpips_std": 0.05981166387889944
+    },
+    {
+      "class": "root_rot",
+      "class_id": 5,
+      "method": "nst_v1",
+      "n_images": 15,
+      "n_pairs": 105,
+      "lpips_mean": 0.5307108097133182,
+      "lpips_std": 0.12508966063839894
+    },
+    {
+      "class": "root_rot",
+      "class_id": 5,
+      "method": "nst_v2",
+      "n_images": 8,
+      "n_pairs": 28,
+      "lpips_mean": 0.6636301438723292,
+      "lpips_std": 0.10056722608206836
+    },
+    {
+      "class": "septoria",
+      "class_id": 6,
+      "method": "real",
+      "n_images": 469,
+      "n_pairs": 500,
+      "lpips_mean": 0.6848529312610626,
+      "lpips_std": 0.11049511639400479
+    },
+    {
+      "class": "septoria",
+      "class_id": 6,
+      "method": "diffusion",
+      "n_images": 72,
+      "n_pairs": 500,
+      "lpips_mean": 0.6692293031215668,
+      "lpips_std": 0.11262598705233379
+    },
+    {
+      "class": "septoria",
+      "class_id": 6,
+      "method": "nst_v1",
+      "n_images": 15,
+      "n_pairs": 105,
+      "lpips_mean": 0.6716081179323651,
+      "lpips_std": 0.12489855867108253
+    },
+    {
+      "class": "septoria",
+      "class_id": 6,
+      "method": "nst_v2",
+      "n_images": 8,
+      "n_pairs": 28,
+      "lpips_mean": 0.6957662510020393,
+      "lpips_std": 0.09408204069776455
+    },
+    {
+      "class": "nitrogen_def",
+      "class_id": 7,
+      "method": "real",
+      "n_images": 594,
+      "n_pairs": 500,
+      "lpips_mean": 0.4852807270288467,
+      "lpips_std": 0.09578751702362677
+    },
+    {
+      "class": "nitrogen_def",
+      "class_id": 7,
+      "method": "diffusion",
+      "n_images": 131,
+      "n_pairs": 500,
+      "lpips_mean": 0.44494545882940295,
+      "lpips_std": 0.08332603088743389
+    },
+    {
+      "class": "nitrogen_def",
+      "class_id": 7,
+      "method": "nst_v1",
+      "n_images": 15,
+      "n_pairs": 105,
+      "lpips_mean": 0.44634093521606355,
+      "lpips_std": 0.09962916481354595
+    },
+    {
+      "class": "nitrogen_def",
+      "class_id": 7,
+      "method": "nst_v2",
+      "n_images": 8,
+      "n_pairs": 28,
+      "lpips_mean": 0.5955241290586335,
+      "lpips_std": 0.0766668179813866
+    },
+    {
+      "class": "frost_damage",
+      "class_id": 8,
+      "method": "real",
+      "n_images": 620,
+      "n_pairs": 500,
+      "lpips_mean": 0.595146637558937,
+      "lpips_std": 0.15237346955347977
+    },
+    {
+      "class": "frost_damage",
+      "class_id": 8,
+      "method": "diffusion",
+      "n_images": 174,
+      "n_pairs": 500,
+      "lpips_mean": 0.5589106552004814,
+      "lpips_std": 0.1386437133315421
+    },
+    {
+      "class": "frost_damage",
+      "class_id": 8,
+      "method": "nst_v1",
+      "n_images": 15,
+      "n_pairs": 105,
+      "lpips_mean": 0.598985793477013,
+      "lpips_std": 0.11228325639412214
+    },
+    {
+      "class": "frost_damage",
+      "class_id": 8,
+      "method": "nst_v2",
+      "n_images": 8,
+      "n_pairs": 28,
+      "lpips_mean": 0.6310122949736459,
+      "lpips_std": 0.08582468143980077
+    }
+  ],
+  "resolution": 256,
+  "net": "alex",
+  "include_aug": false
+}

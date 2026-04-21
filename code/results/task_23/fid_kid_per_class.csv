@@ -1,0 +1,5 @@
+class,class_id,method,n_real,n_synth,fid,kid
+root_rot,5,diffusion,501,73,138.629041,0.08588260
+septoria,6,diffusion,469,72,99.617095,0.00636001
+nitrogen_def,7,diffusion,594,131,69.132499,0.01800655
+frost_damage,8,diffusion,620,174,65.616759,0.00715484

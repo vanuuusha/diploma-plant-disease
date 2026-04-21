@@ -1,0 +1,68 @@
+{
+  "overall": [
+    {
+      "method": "diffusion",
+      "pretty": "Stable Diffusion img2img",
+      "n_real": 3919,
+      "n_synth": 450,
+      "fid": 63.69449637476657,
+      "kid": 0.019774453714489937
+    },
+    {
+      "method": "nst_v1",
+      "pretty": "NST v1 (Adam, 384)",
+      "n_real": 3919,
+      "n_synth": 60,
+      "fid": 244.08387023467282,
+      "kid": 0.07077183574438095
+    },
+    {
+      "method": "nst_v2",
+      "pretty": "NST v2 (LBFGS, YUV, 512)",
+      "n_real": 3919,
+      "n_synth": 32,
+      "fid": 231.6159764972539,
+      "kid": 0.045550018548965454
+    }
+  ],
+  "per_class": [
+    {
+      "class": "root_rot",
+      "class_id": 5,
+      "method": "diffusion",
+      "n_real": 501,
+      "n_synth": 73,
+      "fid": 138.6290410001585,
+      "kid": 0.08588260412216187
+    },
+    {
+      "class": "septoria",
+      "class_id": 6,
+      "method": "diffusion",
+      "n_real": 469,
+      "n_synth": 72,
+      "fid": 99.61709501802892,
+      "kid": 0.006360011640936136
+    },
+    {
+      "class": "nitrogen_def",
+      "class_id": 7,
+      "method": "diffusion",
+      "n_real": 594,
+      "n_synth": 131,
+      "fid": 69.13249917711425,
+      "kid": 0.01800655387341976
+    },
+    {
+      "class": "frost_damage",
+      "class_id": 8,
+      "method": "diffusion",
+      "n_real": 620,
+      "n_synth": 174,
+      "fid": 65.61675864984062,
+      "kid": 0.0071548353880643845
+    }
+  ],
+  "include_aug": false,
+  "n_real": 3919
+}

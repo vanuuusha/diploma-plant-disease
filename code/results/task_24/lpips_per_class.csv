@@ -1,0 +1,17 @@
+class,class_id,method,n_images,n_pairs,lpips_mean,lpips_std
+root_rot,5,real,501,500,0.533369,0.092644
+root_rot,5,diffusion,73,500,0.497458,0.059812
+root_rot,5,nst_v1,15,105,0.530711,0.125090
+root_rot,5,nst_v2,8,28,0.663630,0.100567
+septoria,6,real,469,500,0.684853,0.110495
+septoria,6,diffusion,72,500,0.669229,0.112626
+septoria,6,nst_v1,15,105,0.671608,0.124899
+septoria,6,nst_v2,8,28,0.695766,0.094082
+nitrogen_def,7,real,594,500,0.485281,0.095788
+nitrogen_def,7,diffusion,131,500,0.444945,0.083326
+nitrogen_def,7,nst_v1,15,105,0.446341,0.099629
+nitrogen_def,7,nst_v2,8,28,0.595524,0.076667
+frost_damage,8,real,620,500,0.595147,0.152373
+frost_damage,8,diffusion,174,500,0.558911,0.138644
+frost_damage,8,nst_v1,15,105,0.598986,0.112283
+frost_damage,8,nst_v2,8,28,0.631012,0.085825

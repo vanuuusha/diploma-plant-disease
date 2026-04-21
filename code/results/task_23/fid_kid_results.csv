@@ -1,0 +1,4 @@
+method,pretty,n_real,n_synth,fid,kid
+diffusion,Stable Diffusion img2img,3919,450,63.694496,0.01977445
+nst_v1,"NST v1 (Adam, 384)",3919,60,244.083870,0.07077184
+nst_v2,"NST v2 (LBFGS, YUV, 512)",3919,32,231.615976,0.04555002
