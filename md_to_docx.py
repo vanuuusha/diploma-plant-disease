@@ -33,6 +33,7 @@ import re
 import sys
 
 from docx import Document
+from docx.enum.section import WD_SECTION_START
 from docx.enum.table import WD_ALIGN_VERTICAL, WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
 from docx.oxml.ns import qn
@@ -280,6 +281,112 @@ def add_page_break(doc):
     p.add_run().add_break(WD_BREAK.PAGE)
 
 
+def add_filler_page(doc):
+    """Добавляет «зрительно пустую» страницу — абзац с разрывом страницы.
+
+    Используется для мест, где автор позже вставит в Word титульный лист,
+    задание или автоматическое оглавление. Страница содержит только
+    невидимый параграф-маркер; разрыв страницы внутри параграфа гарантирует,
+    что последующее содержимое окажется на следующей странице.
+    """
+    p = doc.add_paragraph()
+    pf = p.paragraph_format
+    pf.first_line_indent = Cm(0)
+    pf.space_before = Pt(0)
+    pf.space_after = Pt(0)
+    p.add_run().add_break(WD_BREAK.PAGE)
+
+
+def _set_section_page_num_start(section, start):
+    """Устанавливает в sectPr раздела начальный номер страницы (w:pgNumType w:start)."""
+    sectPr = section._sectPr
+    pgNumType = sectPr.find(qn("w:pgNumType"))
+    if pgNumType is None:
+        pgNumType = OxmlElement("w:pgNumType")
+        sectPr.append(pgNumType)
+    pgNumType.set(qn("w:start"), str(start))
+
+
+def _set_section_footer_page_number(section, *, size=Pt(14)):
+    """Настраивает футер раздела: по центру — PAGE-поле с номером страницы.
+
+    Шрифт — TNR указанного размера (по умолчанию 14pt по явному запросу
+    автора: «размер нижнего колонтитула 14 — для сносок»). Футер отвязывается
+    от предыдущего раздела, чтобы нумерация не наследовалась и не
+    отображалась на страницах, относящихся к более ранним разделам
+    (титульный лист, задание, реферат).
+    """
+    footer = section.footer
+    footer.is_linked_to_previous = False
+
+    # Используем существующий параграф (python-docx создаёт его автоматически)
+    # или добавляем новый.
+    fp = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
+    # Очищаем содержимое
+    for r in list(fp.runs):
+        r._element.getparent().remove(r._element)
+
+    pf = fp.paragraph_format
+    pf.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    pf.first_line_indent = Cm(0)
+    pf.line_spacing = 1.0
+    pf.space_before = Pt(0)
+    pf.space_after = Pt(0)
+
+    run = fp.add_run()
+    run_set_font(run, BODY_FONT, size=size)
+    r_el = run._r
+
+    fld_begin = OxmlElement("w:fldChar")
+    fld_begin.set(qn("w:fldCharType"), "begin")
+    r_el.append(fld_begin)
+
+    instr = OxmlElement("w:instrText")
+    instr.set(qn("xml:space"), "preserve")
+    instr.text = " PAGE \\* MERGEFORMAT "
+    r_el.append(instr)
+
+    fld_sep = OxmlElement("w:fldChar")
+    fld_sep.set(qn("w:fldCharType"), "separate")
+    r_el.append(fld_sep)
+
+    t = OxmlElement("w:t")
+    t.text = "4"
+    r_el.append(t)
+
+    fld_end = OxmlElement("w:fldChar")
+    fld_end.set(qn("w:fldCharType"), "end")
+    r_el.append(fld_end)
+
+
+def start_numbered_section(doc, *, start_page=4, page_number_size=Pt(14)):
+    """Создаёт новый раздел с разрывом страницы и нумерацией страниц.
+
+    Назначение: после реферата (страница 3) начинается новый раздел с
+    пустой страницей под автооглавление (страница 4) и далее — основной
+    текст. В этом разделе в футере появляется номер страницы, начиная с 4;
+    предыдущий раздел (титульный лист, задание, реферат) остаётся без
+    номеров страниц.
+
+    Возвращает объект Section для нового раздела.
+    """
+    new_section = doc.add_section(WD_SECTION_START.NEW_PAGE)
+    # Поля — те же, что и у первого раздела (A-1 в styles.md)
+    new_section.top_margin = Mm(20)
+    new_section.bottom_margin = Mm(20)
+    new_section.left_margin = Mm(30)
+    new_section.right_margin = Mm(15)
+
+    # Отвязываем header/footer от предыдущего раздела
+    new_section.header.is_linked_to_previous = False
+    _set_section_footer_page_number(new_section, size=page_number_size)
+
+    # Стартовый номер страницы в новом разделе
+    _set_section_page_num_start(new_section, start_page)
+
+    return new_section
+
+
 def set_paragraph_style(p, *, alignment=None, first_line_indent=None,
                        bold=False, size=None, space_before=None, space_after=None,
                        line_spacing=None, keep_with_next=False):
@@ -398,7 +505,18 @@ def parse_inline(text):
 def add_inline_runs(paragraph, text, *, base_size=BODY_SIZE, base_bold=False,
                     base_italic=False):
     """Добавляет runs с разметкой в абзац."""
-    for kind, content in parse_inline(text):
+    pieces = parse_inline(text)
+    # Схлопываем пробел между словом и маркером сноски: в md-исходнике
+    # «ООН **[1]**» имеет пробел, а в академической типографике верхний
+    # индекс должен прилегать к слову — «ООН¹».
+    cleaned = []
+    for idx, (kind, content) in enumerate(pieces):
+        if (kind == "text" and idx + 1 < len(pieces)
+                and pieces[idx + 1][0] == "footnote"):
+            content = content.rstrip(" \t")
+        cleaned.append((kind, content))
+    pieces = cleaned
+    for kind, content in pieces:
         if kind == "text":
             r = paragraph.add_run(content)
             run_set_font(r, BODY_FONT, size=base_size, bold=base_bold,
@@ -786,11 +904,13 @@ def _ensure_footnote_styles(doc):
         pPr = OxmlElement("w:pPr")
         s.append(pPr)
         rPr = OxmlElement("w:rPr")
+        # По явному запросу автора сноски оформляются тем же кеглем, что и
+        # основной текст (14pt). В half-points единицах w:sz/w:szCs = 28.
         sz = OxmlElement("w:sz")
-        sz.set(qn("w:val"), "20")  # 10pt, как принято для сносок
+        sz.set(qn("w:val"), "28")
         rPr.append(sz)
         szCs = OxmlElement("w:szCs")
-        szCs.set(qn("w:val"), "20")
+        szCs.set(qn("w:val"), "28")
         rPr.append(szCs)
         s.append(rPr)
         styles_el.append(s)
@@ -915,8 +1035,22 @@ def add_footnote_reference(paragraph, source_num, *, base_size=BODY_SIZE):
     r1.append(ref1)
     p.append(r1)
 
-    # run 2 — пробел + библиографическая запись
+    # run 2 — пробел + библиографическая запись.
+    # Шрифт и кегль задаём явно (TNR 14), чтобы не зависело от того,
+    # подхватит ли Word rPr из стиля FootnoteText.
     r2 = OxmlElement("w:r")
+    rPr2 = OxmlElement("w:rPr")
+    rFonts2 = OxmlElement("w:rFonts")
+    for k in ("w:ascii", "w:hAnsi", "w:cs", "w:eastAsia"):
+        rFonts2.set(qn(k), BODY_FONT)
+    rPr2.append(rFonts2)
+    sz2 = OxmlElement("w:sz")
+    sz2.set(qn("w:val"), "28")
+    rPr2.append(sz2)
+    szCs2 = OxmlElement("w:szCs")
+    szCs2.set(qn("w:val"), "28")
+    rPr2.append(szCs2)
+    r2.append(rPr2)
     t2 = OxmlElement("w:t")
     t2.set(qn("xml:space"), "preserve")
     t2.text = " " + citation
@@ -1182,6 +1316,20 @@ def convert():
     # (см. add_heading), в settings.xml — w:updateFields=true; этого достаточно,
     # чтобы ручная сборка оглавления в Word работала корректно.
 
+    # Две зрительно пустые страницы в начале документа — место для титульного
+    # листа и задания (оба заполняются автором в Word после сборки). Номера на
+    # этих страницах не отображаются (раздел 1 не содержит футера).
+    add_filler_page(doc)
+    add_filler_page(doc)
+
+    # Состояние для вставки разрыва раздела и пустой страницы под оглавление
+    # после реферата. Логика: как только после реферата встречается следующий
+    # заголовок (обычно «Термины и определения»), перед ним вставляется
+    # разрыв раздела — начинается раздел 2 с нумерацией страниц с 4, и
+    # добавляется пустая страница под автооглавление.
+    referat_seen = False
+    section2_started = False
+
     i = 0
     last_figure_caption = None  # последняя "подпись" перед изображением
 
@@ -1241,7 +1389,24 @@ def convert():
             level = len(m.group(1))
             text = m.group(2).strip()
             is_chapter = (level == 1)
+
+            # После реферата — разрыв раздела, переход на пустую страницу под
+            # автооглавление, старт нумерации страниц с 4.
+            if referat_seen and not section2_started:
+                start_numbered_section(doc, start_page=4, page_number_size=Pt(14))
+                # Пустая страница под автооглавление: параграф сидит на
+                # странице 4 в начале раздела 2, следующий заголовок
+                # (обычно «Термины и определения») имеет pageBreakBefore и
+                # переходит на страницу 5.
+                p_toc = doc.add_paragraph()
+                p_toc.paragraph_format.first_line_indent = Cm(0)
+                section2_started = True
+
             add_heading(doc, level, text, is_chapter=is_chapter)
+
+            if text.strip().lower() == "реферат":
+                referat_seen = True
+
             i += 1
             continue
 
