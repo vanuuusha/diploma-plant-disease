@@ -3,16 +3,29 @@
 """
 Конвертер diplom.md -> diplom.docx.
 
-Оформление по ГОСТ 7.32-2017:
-    - шрифт Times New Roman 14pt, кегль полуторный;
-    - поля: 20/20/30/15 мм (top/bottom/left/right);
-    - абзацный отступ 1.25 см, выравнивание по ширине;
-    - заголовки первого уровня (главы) — с новой страницы, центрированные,
-      прописные, жирные, TNR 14, без отступа;
-    - подзаголовки — TNR 14, жирные, слева;
-    - таблицы — TNR 12, границы;
-    - код — Consolas 11, фон светло-серый;
-    - LaTeX-формулы — Cambria Math, центрированные для блочных.
+Оформление по ГОСТ 7.32-2017 и styles.md (Список A):
+    - шрифт Times New Roman 14pt, кегль полуторный (A-2, A-3);
+    - поля: 20/20/30/15 мм top/bottom/left/right (A-1);
+    - абзацный отступ 1.25 см, выравнивание по ширине (A-4, A-5);
+    - структурные разделы (РЕФЕРАТ, ТЕРМИНЫ И ОПРЕДЕЛЕНИЯ, ПЕРЕЧЕНЬ
+      СОКРАЩЕНИЙ И ОБОЗНАЧЕНИЙ, СОДЕРЖАНИЕ, ВВЕДЕНИЕ, ЗАКЛЮЧЕНИЕ,
+      СПИСОК ИСПОЛЬЗОВАННЫХ ИСТОЧНИКОВ, ПРИЛОЖЕНИЕ А...) — прописные,
+      по центру, НЕ жирные, с новой страницы (A-7, A-9, A-9a, A-18);
+    - нумерованные главы (1, 2, ...) и подразделы (1.1, 1.1.1) — с
+      красной строки, по левому краю, НЕ прописные, НЕ жирные;
+      главы начинают новую страницу (A-8, A-9, A-9a, A-18);
+    - жирное начертание НЕ используется ни в заголовках, ни в теле
+      текста, ни в таблицах — иерархия задаётся outlineLvl и размером
+      шрифта, не начертанием (A-18);
+    - подписи рисунков — под рисунком, по центру, без точки в конце
+      (A-12, ГОСТ 7.32-2017 п. 6.5.6);
+    - подписи таблиц — над таблицей, слева (A-13);
+    - таблицы — TNR 12, границы, заголовок без жирного (A-18);
+    - формулы — нативные OMML через pandoc, блочные по центру,
+      инлайн в тексте (A-14, A-15);
+    - TOC не вставляется: в заголовках выставлен outlineLvl, ручная
+      сборка оглавления выполняется в Word (A-19);
+    - имя выходного файла — только diplom.docx (A-20).
 """
 
 import os
@@ -31,10 +44,45 @@ from docx.shared import Cm, Mm, Pt, RGBColor, Emu
 # Конфигурация
 # -----------------------------------------------------------------------------
 
-ROOT = "/sessions/serene-youthful-darwin/mnt/Дипломная работа"
+ROOT = os.path.dirname(os.path.abspath(__file__))
 MD_PATH = os.path.join(ROOT, "диплом", "diplom.md")
 FIG_DIR = os.path.join(ROOT, "диплом")  # пути в md относительно этой папки
-OUT_PATH = os.path.join(ROOT, "diplom.docx")
+OUT_PATH = os.path.join(ROOT, "diplom.docx")  # A-20: всегда diplom.docx, без суффиксов
+
+# Набор структурных разделов по ГОСТ 7.32-2017 (A-7, A-9a). Сравнение
+# идёт case-insensitive по тексту заголовка в md (после strip).
+STRUCTURAL_SECTIONS = {
+    "реферат",
+    "термины и определения",
+    "перечень сокращений и обозначений",
+    "содержание",
+    "введение",
+    "заключение",
+    "список использованных источников",
+}
+
+
+def _is_structural_section(text: str) -> bool:
+    """True, если заголовок — структурный раздел ГОСТ (реферат, введение,
+    заключение, список источников, приложение А/Б/...). Такие разделы
+    выводятся прописными буквами по центру, нумерации не имеют.
+    """
+    t = text.strip().lower()
+    if t in STRUCTURAL_SECTIONS:
+        return True
+    # Приложения: «ПРИЛОЖЕНИЕ А», «Приложение Б. Название» и т. п.
+    if t.startswith("приложение "):
+        return True
+    return False
+
+
+def _is_numbered_heading(text: str) -> bool:
+    """True, если заголовок начинается с арабской цифры и пробела/точки
+    (примеры: «1 Название», «1.1 Название», «1.1.1 Название»). Такие
+    заголовки выводятся по левому краю с красной строки, строчными,
+    без жирного (A-8, A-9a).
+    """
+    return bool(re.match(r"^\d+(\.\d+)*\.?\s+\S", text.strip()))
 
 BODY_FONT = "Times New Roman"
 CODE_FONT = "Consolas"
@@ -283,15 +331,24 @@ def run_set_font(run, name=BODY_FONT, size=None, bold=None, italic=None,
 # -----------------------------------------------------------------------------
 
 INLINE_PATTERN = re.compile(
-    r"(\*\*\[\d+\](?:\[\d+\])*\*\*|"  # **[N]** или **[N][M]** — маркер(ы) сноски
-    r"\*\*[^*]+\*\*|"         # **bold**
-    r"\*[^*]+\*|"              # *italic*
-    r"`[^`]+`|"                # `code`
-    r"\$[^$]+\$)"              # $math$
+    r"(\*\*\[\d+\](?:\[\d+\])*\*\*|"  # **[N]** или **[N][M]** — маркер(ы) сноски (legacy)
+    r"\[\d+\](?:\[\d+\])*|"           # [N] или [N][M]... — маркер(ы) сноски (plain)
+    r"\*\*[^*]+\*\*|"                 # **bold**
+    r"\*[^*]+\*|"                     # *italic*
+    r"`[^`]+`|"                       # `code`
+    r"\$[^$]+\$)"                     # $math$
 )
 
-# Маркер сноски: **[N]** или **[N][M]...** (подряд несколько номеров).
+# Маркер сноски: **[N]** или **[N][M]...** (подряд несколько номеров) —
+# старый формат разметки, оставлен для совместимости.
 RE_FOOTNOTE_MARKER = re.compile(r"^\*\*((?:\[\d+\])+)\*\*$")
+
+# Маркер сноски: [N] или [N][M]... — плоский формат. Срабатывает только
+# если все номера внутри соответствуют записям «Список использованных
+# источников» (проверяется через SOURCES). Это позволяет не спутать
+# библиографическую ссылку с, например, `[TODO]`, `[черновик]` и прочими
+# квадратными скобками в тексте.
+RE_FOOTNOTE_MARKER_PLAIN = re.compile(r"^((?:\[\d+\])+)$")
 
 
 def parse_inline(text):
@@ -307,10 +364,21 @@ def parse_inline(text):
             pieces.append(("text", text[pos:m.start()]))
         tok = m.group(0)
         fn_match = RE_FOOTNOTE_MARKER.match(tok)
+        fn_match_plain = RE_FOOTNOTE_MARKER_PLAIN.match(tok)
         if fn_match:
-            # Извлекаем все номера из конструкции **[N][M]...**.
+            # Legacy-формат **[N][M]...**.
             nums = [int(x) for x in re.findall(r"\[(\d+)\]", fn_match.group(1))]
             pieces.append(("footnote", nums))
+        elif fn_match_plain:
+            # Плоский формат [N][M]... Считаем маркером сноски только если
+            # ВСЕ номера внутри — валидные записи списка источников. Иначе
+            # оставляем как обычный текст, чтобы не превращать случайные
+            # `[17]` в сноску на несуществующий источник.
+            nums = [int(x) for x in re.findall(r"\[(\d+)\]", fn_match_plain.group(1))]
+            if SOURCES and all(n in SOURCES for n in nums):
+                pieces.append(("footnote", nums))
+            else:
+                pieces.append(("text", tok))
         elif tok.startswith("**") and tok.endswith("**"):
             pieces.append(("bold", tok[2:-2]))
         elif tok.startswith("*") and tok.endswith("*"):
@@ -336,8 +404,13 @@ def add_inline_runs(paragraph, text, *, base_size=BODY_SIZE, base_bold=False,
             run_set_font(r, BODY_FONT, size=base_size, bold=base_bold,
                          italic=base_italic)
         elif kind == "bold":
+            # A-18 / B-19: жирное начертание в теле текста не используется.
+            # Маркер `**...**` в .md считаем наследственным оформлением и
+            # выводим как обычный текст (без bold). Маркеры сносок
+            # `**[N]**` обрабатываются отдельной веткой kind="footnote"
+            # ещё до того, как попасть сюда.
             r = paragraph.add_run(content)
-            run_set_font(r, BODY_FONT, size=base_size, bold=True,
+            run_set_font(r, BODY_FONT, size=base_size, bold=base_bold,
                          italic=base_italic)
         elif kind == "italic":
             r = paragraph.add_run(content)
@@ -362,10 +435,35 @@ def add_inline_runs(paragraph, text, *, base_size=BODY_SIZE, base_bold=False,
 # -----------------------------------------------------------------------------
 
 def add_heading(doc, level, text, *, is_chapter=False):
+    """Вставляет заголовок с учётом правил styles.md (A-7, A-8, A-9, A-9a, A-18).
+
+    Три случая:
+        1. Структурный раздел (РЕФЕРАТ, ВВЕДЕНИЕ, ЗАКЛЮЧЕНИЕ и т. п.) —
+           прописные буквы, по центру, с новой страницы, НЕ жирный.
+           Не присваивается outlineLvl для РЕФЕРАТА (он не должен
+           попадать в оглавление, см. A-7 исключение), прочим структурным
+           разделам outlineLvl=0 выставляется.
+        2. Нумерованный заголовок уровня 1 («1 Название», «2 Название»...) —
+           по левому краю с красной строки, строчные, НЕ жирный, с новой
+           страницы (начало главы).
+        3. Нумерованный заголовок уровня 2+ («1.1 ...», «1.1.1 ...») —
+           по левому краю с красной строки, строчные, НЕ жирный, без
+           разрыва страницы.
+    """
     p = doc.add_paragraph()
     pf = p.paragraph_format
 
-    if is_chapter or level == 1:
+    structural = _is_structural_section(text)
+    # По умолчанию берём уровень заголовка из markdown (# → 1, ## → 2, ...).
+    # Для структурных разделов, которые в .md размечены как `##` (например,
+    # «## Термины и определения», «## Перечень сокращений…»), всё равно
+    # присваиваем outlineLvl уровня 1, так как это полноценные структурные
+    # разделы по ГОСТ.
+    effective_level = 1 if structural else level
+    is_top_level = (effective_level == 1)
+
+    if structural:
+        # A-7 / A-9a: структурный раздел — прописные по центру, новая страница.
         add_page_break_before(p)
         pf.alignment = WD_ALIGN_PARAGRAPH.CENTER
         pf.first_line_indent = Cm(0)
@@ -374,23 +472,31 @@ def add_heading(doc, level, text, *, is_chapter=False):
         pf.line_spacing = 1.5
         pf.keep_with_next = True
         r = p.add_run(text.upper())
-        run_set_font(r, BODY_FONT, size=Pt(14), bold=True)
+        run_set_font(r, BODY_FONT, size=Pt(14), bold=False)  # A-18: без жирного
     else:
-        pf.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        pf.first_line_indent = Cm(1.25)
-        pf.space_before = Pt(12)
+        # Нумерованный заголовок основной части.
+        if is_top_level or is_chapter:
+            # Глава — с новой страницы.
+            add_page_break_before(p)
+        pf.alignment = WD_ALIGN_PARAGRAPH.LEFT  # A-9a: по левому краю
+        pf.first_line_indent = Cm(1.25)          # A-5: с красной строки
+        pf.space_before = Pt(12) if not is_top_level else Pt(0)
         pf.space_after = Pt(6)
         pf.line_spacing = 1.5
         pf.keep_with_next = True
         r = p.add_run(text)
-        run_set_font(r, BODY_FONT, size=Pt(14), bold=True)
+        run_set_font(r, BODY_FONT, size=Pt(14), bold=False)  # A-18: без жирного
 
-    # Уровень структуры — чтобы Word мог собрать автоматическое оглавление
-    # (поле TOC \o "1-3" \u читает именно outlineLvl). 0-based: level=1 → 0.
-    pPr = p._p.get_or_add_pPr()
-    outline = OxmlElement("w:outlineLvl")
-    outline.set(qn("w:val"), str(max(0, min(level - 1, 8))))
-    pPr.append(outline)
+    # A-19: outlineLvl — иерархия уровней для ручной сборки оглавления в Word.
+    # Исключение (A-7 подп.): РЕФЕРАТ не должен попадать в оглавление.
+    if structural and text.strip().lower() == "реферат":
+        # Для РЕФЕРАТА outlineLvl НЕ выставляем.
+        pass
+    else:
+        pPr = p._p.get_or_add_pPr()
+        outline = OxmlElement("w:outlineLvl")
+        outline.set(qn("w:val"), str(max(0, min(effective_level - 1, 8))))
+        pPr.append(outline)
 
 
 def add_page_break_before(paragraph):
@@ -422,7 +528,7 @@ def add_toc(doc):
     pf.line_spacing = 1.5
     pf.keep_with_next = True
     r = p_title.add_run("СОДЕРЖАНИЕ")
-    run_set_font(r, BODY_FONT, size=Pt(14), bold=True)
+    run_set_font(r, BODY_FONT, size=Pt(14), bold=False)  # A-18: без жирного
 
     # Абзац с полем TOC (fldChar begin → instrText → separate → placeholder → end)
     p_toc = doc.add_paragraph()
@@ -1007,7 +1113,7 @@ def add_table(doc, header, rows):
         borders.append(b)
     tblPr.append(borders)
 
-    def fill(cell, text, *, bold=False):
+    def fill(cell, text, *, header_row=False):
         cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
         # очищаем дефолтный абзац
         cell.text = ""
@@ -1015,15 +1121,17 @@ def add_table(doc, header, rows):
         pf = p.paragraph_format
         pf.first_line_indent = Cm(0)
         pf.line_spacing = 1.15
-        pf.alignment = WD_ALIGN_PARAGRAPH.CENTER if bold else WD_ALIGN_PARAGRAPH.LEFT
+        # Заголовочная строка по центру, данные — по левому краю. Но
+        # жирного начертания не применяем нигде (A-18).
+        pf.alignment = WD_ALIGN_PARAGRAPH.CENTER if header_row else WD_ALIGN_PARAGRAPH.LEFT
         pf.space_before = Pt(2)
         pf.space_after = Pt(2)
-        add_inline_runs(p, text, base_size=TABLE_SIZE, base_bold=bold)
+        add_inline_runs(p, text, base_size=TABLE_SIZE, base_bold=False)
 
     # заголовок
     for i, h in enumerate(header):
         if i < n_cols:
-            fill(tbl.rows[0].cells[i], h, bold=True)
+            fill(tbl.rows[0].cells[i], h, header_row=True)
     # данные
     for ri, row in enumerate(rows):
         for ci, cell_text in enumerate(row):
