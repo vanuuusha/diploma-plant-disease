@@ -276,7 +276,7 @@ def main():
         axes[1].scatter(aw, ah, s=3, alpha=0.3, color="orange")
     axes[1].set_title(f"После аугментации (n={len(aug_size_pairs)})")
     axes[1].set_xlabel("width (норм.)"); axes[1].set_ylabel("height (норм.)")
-    fig.suptitle("Размеры bbox: до и после аугментации")
+    fig.suptitle("Размеры ограничивающих рамок: до и после аугментации")
     fig.tight_layout()
     fig.savefig(os.path.join(RES, "bbox_sizes_comparison.png"), dpi=300, bbox_inches="tight")
     plt.close(fig)
