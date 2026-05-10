@@ -260,20 +260,140 @@ def setup_document():
     pf.space_before = Pt(0)
     pf.space_after = Pt(0)
 
+    # Переопределение встроенных стилей Heading 1/2/3 под ГОСТ:
+    # TNR 14, не жирный, чёрный. Конкретное выравнивание и регистр
+    # настраиваются на самом параграфе (direct formatting в add_heading).
+    _setup_heading_styles(doc)
+
+    # Переопределение встроенного стиля Hyperlink: не менять шрифт и цвет.
+    # Без этого фрагменты URL в сносках и тексте Word рендерит Calibri/синим,
+    # ломая типографику — TNR должен оставаться сквозным.
+    _neutralize_hyperlink_style(doc)
+
     # Включение автоматического переноса слов
     settings = doc.settings.element
     auto_hyphenation = OxmlElement("w:autoHyphenation")
     auto_hyphenation.set(qn("w:val"), "true")
     settings.append(auto_hyphenation)
 
-    # Попросить Word обновить все поля при открытии — важно для поля TOC:
-    # Word предложит пересобрать оглавление, и пользователю не нужно вручную
-    # нажимать F9.
-    update_fields = OxmlElement("w:updateFields")
-    update_fields.set(qn("w:val"), "true")
-    settings.append(update_fields)
+    # w:updateFields=true сознательно НЕ выставляется. При его наличии Word при
+    # каждом открытии показывает диалог «Документ содержит поля, которые ссылаются
+    # на другие файлы. Обновить поля в документе?» — срабатывает даже на обычных
+    # полях PAGE в футере и смущает читателей. Автоматическое оглавление
+    # в диплом не включено (A-19), поэтому принудительного обновления полей при
+    # открытии не требуется; номера страниц в футере Word всё равно обновляет сам.
 
     return doc
+
+
+def _setup_heading_styles(doc):
+    """Переопределяет встроенные стили Heading 1/2/3 под ГОСТ.
+
+    Назначает Times New Roman 14pt, чёрный, НЕ жирный. Конкретное
+    выравнивание (по центру для структурных разделов, слева для
+    нумерованных глав и подразделов) и регистр (прописные для
+    структурных) задаются на самом параграфе в add_heading как
+    direct formatting — они переопределяют стиль.
+
+    Без этих стилей все заголовки попадают в Normal, панель «Навигация»
+    пуста, автоматическое оглавление по outlineLvl собирается криво.
+    """
+    for style_id in ("Heading 1", "Heading 2", "Heading 3"):
+        try:
+            style = doc.styles[style_id]
+        except KeyError:
+            continue
+
+        font = style.font
+        font.name = BODY_FONT
+        font.size = BODY_SIZE
+        font.bold = False
+        font.italic = False
+        font.color.rgb = RGBColor(0, 0, 0)
+
+        # Прокидываем TNR во все скрипты rFonts (в том числе eastAsia/cs),
+        # иначе Word для кириллицы подставит шрифт по умолчанию из темы.
+        rpr = style.element.get_or_add_rPr()
+        rFonts = rpr.find(qn("w:rFonts"))
+        if rFonts is None:
+            rFonts = OxmlElement("w:rFonts")
+            rpr.insert(0, rFonts)
+        for k in ("w:ascii", "w:hAnsi", "w:cs", "w:eastAsia"):
+            rFonts.set(qn(k), BODY_FONT)
+
+        # Явно выставляем b="0" и bCs="0" — встроенные Heading по умолчанию
+        # жирные, без явного сброса Word игнорирует font.bold=False (A-18).
+        for tag in ("w:b", "w:bCs"):
+            el = rpr.find(qn(tag))
+            if el is None:
+                el = OxmlElement(tag)
+                rpr.append(el)
+            el.set(qn("w:val"), "0")
+
+        # Цвет — чёрный явно (встроенный Heading 1 красит в синий).
+        color = rpr.find(qn("w:color"))
+        if color is None:
+            color = OxmlElement("w:color")
+            rpr.append(color)
+        color.set(qn("w:val"), "000000")
+
+        # Параметры параграфа стиля: полуторный интервал, без доп. spacing,
+        # выравнивание на уровне стиля НЕ фиксируем — оно задаётся direct-
+        # формированием в add_heading (центр для структурных, лево для
+        # нумерованных). Indent тоже не трогаем.
+        pf = style.paragraph_format
+        pf.line_spacing = 1.5
+
+
+def _neutralize_hyperlink_style(doc):
+    """Нейтрализует встроенный стиль Hyperlink: убирает смену шрифта и цвета.
+
+    Симптом без этого фикса: в сносках и в тексте URL рендерится
+    Calibri синего цвета (поверх TNR), хотя явных <w:hyperlink> элементов
+    в документе может и не быть — Word применяет стиль Hyperlink
+    автоматически, если видит текст, похожий на URL.
+    """
+    styles_el = doc.styles.element
+    # Ищем существующий стиль Hyperlink; если его нет — создаём пустой,
+    # чтобы зафиксировать нейтральное оформление.
+    hyperlink_style = None
+    for s in styles_el.findall(qn("w:style")):
+        if s.get(qn("w:styleId")) == "Hyperlink":
+            hyperlink_style = s
+            break
+    if hyperlink_style is None:
+        hyperlink_style = OxmlElement("w:style")
+        hyperlink_style.set(qn("w:type"), "character")
+        hyperlink_style.set(qn("w:styleId"), "Hyperlink")
+        name = OxmlElement("w:name")
+        name.set(qn("w:val"), "Hyperlink")
+        hyperlink_style.append(name)
+        styles_el.append(hyperlink_style)
+
+    rPr = hyperlink_style.find(qn("w:rPr"))
+    if rPr is None:
+        rPr = OxmlElement("w:rPr")
+        hyperlink_style.append(rPr)
+
+    # Принудительно указываем TNR и чёрный цвет без подчёркивания.
+    rFonts = rPr.find(qn("w:rFonts"))
+    if rFonts is None:
+        rFonts = OxmlElement("w:rFonts")
+        rPr.insert(0, rFonts)
+    for k in ("w:ascii", "w:hAnsi", "w:cs", "w:eastAsia"):
+        rFonts.set(qn(k), BODY_FONT)
+
+    color = rPr.find(qn("w:color"))
+    if color is None:
+        color = OxmlElement("w:color")
+        rPr.append(color)
+    color.set(qn("w:val"), "000000")
+
+    u = rPr.find(qn("w:u"))
+    if u is None:
+        u = OxmlElement("w:u")
+        rPr.append(u)
+    u.set(qn("w:val"), "none")
 
 
 def add_page_break(doc):
@@ -580,6 +700,22 @@ def add_heading(doc, level, text, *, is_chapter=False):
     effective_level = 1 if structural else level
     is_top_level = (effective_level == 1)
 
+    # Присваивание встроенного стиля Heading 1/2/3 — даёт outlineLvl из
+    # стиля, включает заголовок в панель «Навигация» и в автосборку
+    # оглавления. Исключение A-7 подп.: РЕФЕРАТ остаётся в Normal и в
+    # оглавление не попадает.
+    is_referat = structural and text.strip().lower() == "реферат"
+    heading_style_name = None
+    if not is_referat:
+        heading_style_name = {
+            1: "Heading 1", 2: "Heading 2", 3: "Heading 3",
+        }.get(effective_level)
+        if heading_style_name is not None:
+            try:
+                p.style = doc.styles[heading_style_name]
+            except KeyError:
+                heading_style_name = None
+
     if structural:
         # A-7 / A-9a: структурный раздел — прописные по центру, новая страница.
         add_page_break_before(p)
@@ -606,11 +742,11 @@ def add_heading(doc, level, text, *, is_chapter=False):
         run_set_font(r, BODY_FONT, size=Pt(14), bold=False)  # A-18: без жирного
 
     # A-19: outlineLvl — иерархия уровней для ручной сборки оглавления в Word.
-    # Исключение (A-7 подп.): РЕФЕРАТ не должен попадать в оглавление.
-    if structural and text.strip().lower() == "реферат":
-        # Для РЕФЕРАТА outlineLvl НЕ выставляем.
-        pass
-    else:
+    # Если стиль Heading 1/2/3 назначен, его outlineLvl уже применён, но мы
+    # дополнительно выставляем direct-формирование как страховку: при
+    # возможных правках стиля outlineLvl в параграфе останется. Исключение
+    # (A-7 подп.): РЕФЕРАТ не должен попадать в оглавление.
+    if not is_referat:
         pPr = p._p.get_or_add_pPr()
         outline = OxmlElement("w:outlineLvl")
         outline.set(qn("w:val"), str(max(0, min(effective_level - 1, 8))))
@@ -696,6 +832,8 @@ def add_paragraph(doc, text):
     pf = p.paragraph_format
     pf.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
     pf.first_line_indent = Cm(1.25)
+    pf.left_indent = Cm(0)   # сброс: предыдущий элемент мог быть списком
+    pf.right_indent = Cm(0)
     pf.line_spacing = 1.5
     pf.space_before = Pt(0)
     pf.space_after = Pt(0)
@@ -1247,6 +1385,25 @@ def add_table(doc, header, rows):
         borders.append(b)
     tblPr.append(borders)
 
+    # Явно задаём ширину таблицы в процентах от контентной области (pct=5000 = 100%).
+    # Без этого Word при autofit=True иногда оставляет таблицу неестественно узкой,
+    # прижимая содержимое к левому краю и заставляя Word переносить формулы
+    # (например, O(N²) в таблице 1.1) внутри ячеек. Пять тысяч fiftieths-of-a-percent
+    # = 100 %. Плюс явно ставим tblLayout type="autofit" — при разных локалях Word
+    # иначе может применить fixed layout с дефолтными одинаковыми колонками.
+    tblW = tblPr.find(qn("w:tblW"))
+    if tblW is None:
+        tblW = OxmlElement("w:tblW")
+        tblPr.append(tblW)
+    tblW.set(qn("w:type"), "pct")
+    tblW.set(qn("w:w"), "5000")
+
+    tblLayout = tblPr.find(qn("w:tblLayout"))
+    if tblLayout is None:
+        tblLayout = OxmlElement("w:tblLayout")
+        tblPr.append(tblLayout)
+    tblLayout.set(qn("w:type"), "autofit")
+
     def fill(cell, text, *, header_row=False):
         cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
         # очищаем дефолтный абзац
@@ -1271,6 +1428,33 @@ def add_table(doc, header, rows):
         for ci, cell_text in enumerate(row):
             if ci < n_cols:
                 fill(tbl.rows[1 + ri].cells[ci], cell_text)
+
+    # Запрещаем разрыв отдельной строки между страницами (A-10 / GOST).
+    # Без <w:cantSplit/> Word может разорвать, например, последнюю строку
+    # таблицы 2.4 (RandomResizedCrop) между стр. 52 и 53.
+    # Заголовочная строка дополнительно помечается как повторяющаяся
+    # (<w:tblHeader/>) — при переносе таблицы на следующую страницу заголовок
+    # повторяется на каждой странице.
+    # Плюс ставим atLeast-ограничение на высоту строки: Word сам подтянет высоту
+    # к содержимому, но не сожмёт её ниже указанного минимума. Это визуально
+    # выравнивает строки в таблицах, где у части ячеек короткий контент
+    # (таблица 2.3 «Количественные характеристики дисбаланса» — симптомный
+    # пример), не ломая верстку для длинных ячеек.
+    MIN_ROW_HEIGHT_TWIPS = "360"  # 360 twips = ~0.63 см (одинарная строка TNR 12)
+    for row_index, row in enumerate(tbl.rows):
+        trPr = row._tr.find(qn("w:trPr"))
+        if trPr is None:
+            trPr = OxmlElement("w:trPr")
+            row._tr.insert(0, trPr)
+        if trPr.find(qn("w:cantSplit")) is None:
+            trPr.append(OxmlElement("w:cantSplit"))
+        if row_index == 0 and trPr.find(qn("w:tblHeader")) is None:
+            trPr.append(OxmlElement("w:tblHeader"))
+        if trPr.find(qn("w:trHeight")) is None:
+            trHeight = OxmlElement("w:trHeight")
+            trHeight.set(qn("w:val"), MIN_ROW_HEIGHT_TWIPS)
+            trHeight.set(qn("w:hRule"), "atLeast")
+            trPr.append(trHeight)
 
 
 # -----------------------------------------------------------------------------
